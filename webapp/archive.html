@@ -112,10 +112,7 @@
   .card-tag.quote { background: var(--vip); color: var(--vip-text); }
   .card-tag.manual { background: var(--moderator); color: var(--moderator-text); }
 
-  .icon-btn {
-    background: none; border: none; cursor: pointer; font-size: 13px; color: var(--ink-soft);
-    padding: 4px 6px; margin-top: 8px; font-weight: 700;
-  }
+  .icon-btn { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--ink-soft); padding: 4px 6px; margin-top: 8px; font-weight: 700; }
   .icon-btn:hover { color: var(--danger); }
   .icon-btn.edit:hover { color: var(--purple); }
 
@@ -151,10 +148,7 @@
     border-radius: 999px; font-size: 12px; font-weight: 700; cursor: pointer;
   }
 
-  .archived-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    border-top: 1.5px dashed var(--line); padding-top: 12px;
-  }
+  .archived-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1.5px dashed var(--line); padding-top: 12px; }
   .archived-badge { font-size: 11.5px; font-weight: 700; color: var(--purple); background: var(--viewer); border-radius: 999px; padding: 6px 12px; }
   .tag-chip { display: inline-block; background: var(--panel); color: var(--purple); border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 700; margin-right: 4px; }
   .archived-actions { display: flex; gap: 2px; flex-shrink: 0; }
@@ -167,7 +161,10 @@
   .modal label { display: block; font-size: 12px; font-weight: 700; margin-top: 14px; color: var(--ink-soft); }
   .modal input { width: 100%; box-sizing: border-box; padding: 10px 14px; margin-top: 6px; border: 1.5px solid var(--line); border-radius: 999px; font-size: 13px; font-family: inherit; }
   .modal .hint { font-size: 11px; color: var(--ink-soft); margin-top: 8px; line-height: 1.5; font-weight: 500; }
+  .modal .error { font-size: 12px; color: var(--danger); font-weight: 700; margin-top: 10px; display: none; }
+  .modal .error.show { display: block; }
   .modal button.primary { margin-top: 18px; width: 100%; padding: 11px; background: var(--subscriber); color: #fff; border: none; border-radius: 999px; cursor: pointer; font-size: 14px; font-weight: 800; }
+  .modal .reset-link { margin-top: 14px; text-align: center; font-size: 11.5px; color: var(--ink-soft); cursor: pointer; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -207,13 +204,13 @@
 </div>
 
 <script>
-const STORAGE_KEY = 'tweetArchiverSettings';
+const VAULT_KEY = 'tweetArchiverVault'; // 암호화된 {githubToken, gistId}만 저장됨
 const FILE_NAME = 'tweet-archive.json';
 
-let settings = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+let settings = null; // 메모리에만 존재 (복호화 성공 후에만 채워짐, 평문으로 저장되지 않음)
 let data = { items: [] };
 let folders = JSON.parse(localStorage.getItem('tweetArchiverFolders') || '[]');
-let currentFilter = 'all'; // 'all' | 'unclassified' | 'media:photo' | 'media:video' | 폴더명
+let currentFilter = 'all';
 let searchTerm = '';
 let editingIds = new Set();
 
@@ -221,37 +218,148 @@ function saveFolders() {
   localStorage.setItem('tweetArchiverFolders', JSON.stringify(folders));
 }
 
-function openSettingsModal() {
+/* ---------- 암호화 유틸 (Web Crypto, AES-GCM + PBKDF2) ---------- */
+
+function bytesToBase64(bytes) {
+  let bin = '';
+  bytes.forEach((b) => (bin += String.fromCharCode(b)));
+  return btoa(bin);
+}
+function base64ToBytes(b64) {
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+async function deriveKey(password, saltB64) {
+  const salt = saltB64 ? base64ToBytes(saltB64) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+  return { key, salt };
+}
+
+async function encryptVault(password, obj) {
+  const { key, salt } = await deriveKey(password);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipherBuf = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj))
+  );
+  return {
+    salt: bytesToBase64(salt),
+    iv: bytesToBase64(iv),
+    cipher: bytesToBase64(new Uint8Array(cipherBuf)),
+  };
+}
+
+async function decryptVault(password, vault) {
+  const { key } = await deriveKey(password, vault.salt);
+  const plainBuf = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: base64ToBytes(vault.iv) }, key, base64ToBytes(vault.cipher)
+  );
+  return JSON.parse(new TextDecoder().decode(plainBuf));
+}
+
+function getVault() {
+  const raw = localStorage.getItem(VAULT_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+function saveVault(vault) {
+  localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+}
+
+/* ---------- 잠금 해제 / 최초 설정 모달 ---------- */
+
+async function requireUnlock(onSuccess) {
+  const vault = getVault();
+  if (settings) { onSuccess(); return; }
+  if (!vault) { openSetupModal(onSuccess); return; }
+  openUnlockModal(vault, onSuccess);
+}
+
+function openUnlockModal(vault, onSuccess) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>🔒 잠금 해제</h3>
+      <label>비밀번호</label>
+      <input type="password" id="unlockPw" placeholder="설정할 때 정한 비밀번호" autofocus />
+      <div class="error" id="unlockError">비밀번호가 올바르지 않아요.</div>
+      <button class="primary" id="unlockBtn">잠금 해제</button>
+      <div class="reset-link" id="resetLink">비밀번호를 잊었어요 · 새로 설정하기</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  const submit = async () => {
+    const pw = document.getElementById('unlockPw').value;
+    try {
+      settings = await decryptVault(pw, vault);
+      overlay.remove();
+      onSuccess();
+    } catch (err) {
+      document.getElementById('unlockError').classList.add('show');
+    }
+  };
+  document.getElementById('unlockBtn').addEventListener('click', submit);
+  document.getElementById('unlockPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+
+  document.getElementById('resetLink').addEventListener('click', () => {
+    if (!confirm('저장된 토큰 정보를 지우고 새로 설정할까요? 기존 비밀번호로는 더 이상 열 수 없게 됩니다.')) return;
+    localStorage.removeItem(VAULT_KEY);
+    overlay.remove();
+    openSetupModal(onSuccess);
+  });
+}
+
+function openSetupModal(onSuccess) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
     <div class="modal">
       <h3>🎀 Gist 연결 설정</h3>
       <label>GitHub Personal Access Token</label>
-      <input type="password" id="modalToken" placeholder="ghp_..." value="${settings?.githubToken || ''}" />
+      <input type="password" id="setupToken" placeholder="ghp_..." value="${settings?.githubToken ? settings.githubToken : ''}" />
       <label>Gist ID</label>
-      <input type="text" id="modalGistId" placeholder="예: a1b2c3d4..." value="${settings?.gistId || ''}" />
-      <div class="hint">확장 프로그램 팝업에서 사용한 것과 <b>같은</b> 토큰/Gist ID를 입력하세요. 토큰에는 gist 권한이 필요합니다.</div>
-      <button class="primary" id="modalSave">저장하고 불러오기</button>
+      <input type="text" id="setupGistId" placeholder="예: a1b2c3d4..." value="${settings?.gistId ? settings.gistId : ''}" />
+      <label>잠금 비밀번호 (이 브라우저에서 다시 열 때 사용)</label>
+      <input type="password" id="setupPw" placeholder="비밀번호 설정" />
+      <div class="hint">토큰은 이 비밀번호로 암호화되어 브라우저에만 저장돼요. 소스 코드에는 저장되지 않고, 비밀번호를 잊으면 토큰을 다시 입력해야 해요.</div>
+      <div class="error" id="setupError">비밀번호를 입력해주세요.</div>
+      <button class="primary" id="setupSave">암호화해서 저장</button>
     </div>
   `;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  document.getElementById('modalSave').addEventListener('click', async () => {
-    const githubToken = document.getElementById('modalToken').value.trim();
-    const gistId = document.getElementById('modalGistId').value.trim();
+
+  document.getElementById('setupSave').addEventListener('click', async () => {
+    const githubToken = document.getElementById('setupToken').value.trim();
+    const gistId = document.getElementById('setupGistId').value.trim();
+    const pw = document.getElementById('setupPw').value;
+
+    if (!githubToken || !gistId || !pw) {
+      document.getElementById('setupError').classList.add('show');
+      return;
+    }
+
+    const vault = await encryptVault(pw, { githubToken, gistId });
+    saveVault(vault);
     settings = { githubToken, gistId };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     overlay.remove();
-    await loadFromGist();
+    onSuccess();
   });
 }
 
-async function loadFromGist() {
-  if (!settings?.githubToken || !settings?.gistId) {
-    openSettingsModal();
-    return;
-  }
+/* ---------- Gist 통신 ---------- */
+
+async function fetchAndRenderFromGist() {
   try {
     const res = await fetch(`https://api.github.com/gists/${settings.gistId}`, {
       headers: { Authorization: `token ${settings.githubToken}`, Accept: 'application/vnd.github+json' },
@@ -281,6 +389,8 @@ async function saveToGist() {
   });
   if (!res.ok) alert('저장 실패 (' + res.status + ')');
 }
+
+/* ---------- 렌더링 ---------- */
 
 function sourceLabel(source) {
   if (source === 'quote') return { text: 'VIP · 인용', cls: 'quote', icon: '✦' };
@@ -398,7 +508,6 @@ function renderCards() {
     const dateTime = formatDateTime(item.createdAt);
     const tagsHtml = (item.tags || []).map((t) => `<span class="tag-chip">#${t}</span>`).join(' ');
     const mediaHtml = mediaBadges(item.media);
-
     const showForm = !isArchived || isEditing;
 
     return `
@@ -453,20 +562,10 @@ function renderCards() {
     });
 
     const editBtn = cardEl.querySelector('.edit-btn');
-    if (editBtn) {
-      editBtn.addEventListener('click', () => {
-        editingIds.add(id);
-        renderCards();
-      });
-    }
+    if (editBtn) editBtn.addEventListener('click', () => { editingIds.add(id); renderCards(); });
 
     const cancelBtn = cardEl.querySelector('.cancel-btn');
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', () => {
-        editingIds.delete(id);
-        renderCards();
-      });
-    }
+    if (cancelBtn) cancelBtn.addEventListener('click', () => { editingIds.delete(id); renderCards(); });
 
     const saveBtn = cardEl.querySelector('.save-btn');
     if (!saveBtn) return;
@@ -495,8 +594,10 @@ function render() {
   renderCards();
 }
 
-document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
-document.getElementById('refreshBtn').addEventListener('click', loadFromGist);
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  requireUnlock(() => openSetupModal(fetchAndRenderFromGist));
+});
+document.getElementById('refreshBtn').addEventListener('click', () => requireUnlock(fetchAndRenderFromGist));
 document.getElementById('searchInput').addEventListener('input', (e) => { searchTerm = e.target.value; renderCards(); });
 document.getElementById('addFolderBtn').addEventListener('click', () => {
   const input = document.getElementById('newFolderInput');
@@ -507,7 +608,7 @@ document.getElementById('addFolderBtn').addEventListener('click', () => {
   render();
 });
 
-loadFromGist();
+requireUnlock(fetchAndRenderFromGist);
 </script>
 </body>
 </html>
