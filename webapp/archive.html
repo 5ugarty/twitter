@@ -85,6 +85,7 @@
     background: var(--moderator); border: none; color: #6b4a63; border-radius: 50%;
     cursor: pointer; width: 32px; height: 32px; font-size: 15px; font-weight: 700; flex-shrink: 0;
   }
+  .tag-list-scroll { max-height: 260px; overflow-y: auto; }
 
   .main { padding: 20px 36px 60px; }
   .search-row { display: flex; gap: 10px; margin-bottom: 10px; }
@@ -177,6 +178,7 @@
   <div class="topbar-actions">
     <button id="refreshBtn">↻ 새로고침</button>
     <button id="settingsBtn">⚙ 설정</button>
+    <button id="autoTagBtn" title="특정 단어가 포함되면 자동으로 태그를 붙이는 규칙">🏷 자동태그</button>
     <button id="lockBtn" title="이 탭에서만 즉시 잠그기">🔒 잠그기</button>
   </div>
 </div>
@@ -192,6 +194,9 @@
 
     <h2>미디어</h2>
     <div id="mediaList"></div>
+
+    <h2>태그</h2>
+    <div id="tagList" class="tag-list-scroll"></div>
   </div>
 
   <div class="main">
@@ -218,6 +223,104 @@ let editingIds = new Set();
 
 function saveFolders() {
   localStorage.setItem('tweetArchiverFolders', JSON.stringify(folders));
+}
+
+/* ---------- 자동 태그 규칙 ---------- */
+const AUTO_TAG_KEY = 'tweetArchiverAutoTagRules';
+
+function getAutoTagRules() {
+  return JSON.parse(localStorage.getItem(AUTO_TAG_KEY) || '[]'); // [{ tag, keywords: [] }]
+}
+function saveAutoTagRules(rules) {
+  localStorage.setItem(AUTO_TAG_KEY, JSON.stringify(rules));
+}
+function computeAutoTags(text) {
+  if (!text) return [];
+  const rules = getAutoTagRules();
+  const matched = [];
+  rules.forEach((rule) => {
+    const hit = (rule.keywords || []).some((kw) => kw && text.includes(kw));
+    if (hit) matched.push(rule.tag);
+  });
+  return matched;
+}
+
+function openAutoTagRulesModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>🏷 자동 태그 규칙</h3>
+      <div class="hint">지정한 단어가 트윗 본문에 포함되어 있으면 저장할 때 해당 태그를 자동으로 제안해요. 예: 키워드 [거노, 건호, 고노] → 태그 "건호"</div>
+      <div id="ruleListInModal" style="margin-top:14px; max-height:200px; overflow-y:auto;"></div>
+      <label>태그 이름</label>
+      <input type="text" id="newRuleTag" placeholder="예: 건호" />
+      <label>키워드 (쉼표로 구분)</label>
+      <input type="text" id="newRuleKeywords" placeholder="예: 거노, 건호, 고노" />
+      <button class="primary" id="addRuleBtn">규칙 추가</button>
+      <div class="reset-link" id="reapplyRulesLink">기존에 저장된 트윗들에도 지금 규칙 전체 재적용</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  function renderRuleList() {
+    const rules = getAutoTagRules();
+    const list = document.getElementById('ruleListInModal');
+    if (rules.length === 0) {
+      list.innerHTML = `<div style="font-size:12px; color:var(--ink-soft);">등록된 규칙이 없어요.</div>`;
+      return;
+    }
+    list.innerHTML = rules.map((r, i) => `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px dashed var(--line);">
+        <div style="font-size:12.5px;"><b>#${r.tag}</b> ← ${(r.keywords || []).join(', ')}</div>
+        <button data-idx="${i}" class="rule-delete-btn" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;">삭제</button>
+      </div>
+    `).join('');
+    list.querySelectorAll('.rule-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const rules = getAutoTagRules();
+        rules.splice(Number(btn.dataset.idx), 1);
+        saveAutoTagRules(rules);
+        renderRuleList();
+      });
+    });
+  }
+  renderRuleList();
+
+  document.getElementById('addRuleBtn').addEventListener('click', () => {
+    const tag = document.getElementById('newRuleTag').value.trim();
+    const keywordsRaw = document.getElementById('newRuleKeywords').value.trim();
+    if (!tag || !keywordsRaw) { alert('태그 이름과 키워드를 모두 입력해주세요.'); return; }
+    const keywords = keywordsRaw.split(',').map((k) => k.trim()).filter(Boolean);
+
+    const rules = getAutoTagRules();
+    rules.push({ tag, keywords });
+    saveAutoTagRules(rules);
+
+    document.getElementById('newRuleTag').value = '';
+    document.getElementById('newRuleKeywords').value = '';
+    renderRuleList();
+  });
+
+  document.getElementById('reapplyRulesLink').addEventListener('click', async () => {
+    if (!confirm('저장된 모든 트윗을 지금 등록된 규칙으로 다시 검사해서 일치하는 태그를 추가할까요?')) return;
+    let changedCount = 0;
+    data.items.forEach((item) => {
+      const auto = computeAutoTags(item.text);
+      const existing = item.tags || [];
+      const merged = Array.from(new Set([...existing, ...auto]));
+      if (merged.length !== existing.length) {
+        item.tags = merged;
+        changedCount++;
+      }
+    });
+    if (changedCount > 0) {
+      await saveToGist();
+      render();
+    }
+    alert(`${changedCount}개 트윗에 태그를 추가했어요.`);
+  });
 }
 
 /* ---------- 암호화 유틸 (Web Crypto, AES-GCM + PBKDF2) ---------- */
@@ -414,9 +517,9 @@ async function saveToGist() {
 /* ---------- 렌더링 ---------- */
 
 function sourceLabel(source) {
-  if (source === 'quote') return { text: 'VIP · 인용', cls: 'quote', icon: '✦' };
-  if (source === 'manual') return { text: 'Moderator · 수동추가', cls: 'manual', icon: '🎀' };
-  return { text: 'Subscriber · 본인트윗', cls: 'own', icon: '🩰' };
+  if (source === 'quote') return { text: '자동트윗 · 인용', cls: 'quote', icon: '✦' };
+  if (source === 'manual') return { text: '수동추가', cls: 'manual', icon: '🎀' };
+  return { text: '자동트윗', cls: 'own', icon: '🩰' };
 }
 
 function mediaBadges(media) {
@@ -472,6 +575,35 @@ function renderFolderList() {
   document.querySelectorAll('.folder-tab').forEach((el) => {
     el.addEventListener('click', () => { currentFilter = el.dataset.filter; render(); });
   });
+
+  renderTagList();
+}
+
+function renderTagList() {
+  const tagList = document.getElementById('tagList');
+  const tagCounts = {};
+  data.items.forEach((i) => {
+    (i.tags || []).forEach((t) => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
+  });
+  const tagNames = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a]);
+
+  if (tagNames.length === 0) {
+    tagList.innerHTML = `<div style="padding:6px 10px;font-size:11.5px;color:var(--ink-soft);">태그를 달면 여기 표시돼요</div>`;
+    return;
+  }
+
+  tagList.innerHTML = tagNames.map((t) => {
+    const filterKey = `tag:${t}`;
+    return `
+      <div class="folder-tab ${currentFilter === filterKey ? 'active' : ''}" data-filter="${filterKey}">
+        <span># ${t}</span><span class="count">${tagCounts[t]}</span>
+      </div>
+    `;
+  }).join('');
+
+  tagList.querySelectorAll('.folder-tab').forEach((el) => {
+    el.addEventListener('click', () => { currentFilter = el.dataset.filter; render(); });
+  });
 }
 
 function folderOptionsHtml(selected, suggestedHandle) {
@@ -496,6 +628,7 @@ function matchesCurrentFilter(item) {
   if (currentFilter === 'unclassified') return !item.folder;
   if (currentFilter === 'media:photo') return (item.media || []).includes('photo');
   if (currentFilter === 'media:video') return (item.media || []).some((m) => m === 'video' || m === 'animated_gif');
+  if (currentFilter.startsWith('tag:')) return (item.tags || []).includes(currentFilter.slice(4));
   return item.folder === currentFilter;
 }
 
@@ -531,6 +664,10 @@ function renderCards() {
     const mediaHtml = mediaBadges(item.media);
     const showForm = !isArchived || isEditing;
 
+    const existingTags = item.tags || [];
+    const autoSuggested = showForm ? computeAutoTags(item.text).filter((t) => !existingTags.includes(t)) : [];
+    const tagInputValue = [...existingTags, ...autoSuggested].join(', ');
+
     return `
       <div class="card" data-idx="${realIdx}" data-id="${item.id}">
         <div class="card-top">
@@ -549,7 +686,7 @@ function renderCards() {
             <div class="card-form">
               <div class="card-form-row">
                 <select class="folder-select">${folderOptionsHtml(item.folder, item.handle)}</select>
-                <input type="text" class="tag-input" placeholder="태그 (쉼표로 구분)" value="${(item.tags || []).join(', ')}" />
+                <input type="text" class="tag-input" placeholder="태그 (쉼표로 구분)" value="${tagInputValue}" />
               </div>
               <div class="card-form-actions">
                 <button class="save-btn">저장</button>
@@ -559,7 +696,7 @@ function renderCards() {
           `
             : `
             <div class="archived-row">
-              <div class="archived-badge">✓ ${item.folder} ${tagsHtml}</div>
+              <div class="archived-badge">✓ ${item.folder && item.folder !== item.handle ? item.folder + ' ' : ''}${tagsHtml}</div>
               <div class="archived-actions">
                 <button class="icon-btn edit edit-btn" title="폴더/태그 수정">✎</button>
               </div>
@@ -618,6 +755,7 @@ function render() {
 document.getElementById('settingsBtn').addEventListener('click', () => {
   requireUnlock(() => openSetupModal(fetchAndRenderFromGist));
 });
+document.getElementById('autoTagBtn').addEventListener('click', openAutoTagRulesModal);
 document.getElementById('refreshBtn').addEventListener('click', () => requireUnlock(fetchAndRenderFromGist));
 document.getElementById('lockBtn').addEventListener('click', () => {
   settings = null;
