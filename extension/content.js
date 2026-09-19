@@ -19,7 +19,7 @@ window.addEventListener("message", (event) => {
   });
 });
 
-// 3) 남의 트윗을 수동으로 추가할 수 있는 "＋" 버튼을 각 트윗에 삽입
+// 3) 트윗마다 추가/취소 토글 버튼을 삽입 (본인 트윗도 상태 확인/취소용으로 동일하게 붙음)
 function addManualButtons() {
   document.querySelectorAll('article[data-testid="tweet"]').forEach((article) => {
     if (article.dataset.archiverInjected) return;
@@ -31,7 +31,8 @@ function addManualButtons() {
 
     const btn = document.createElement("span");
     btn.textContent = "＋";
-    btn.title = "트윗 아카이버에 수동으로 추가";
+    btn.title = "트윗 아카이버에 추가";
+    btn.dataset.saved = "false";
     btn.style.cssText =
       "cursor:pointer;padding:0 10px;color:rgb(83,100,113);font-size:16px;font-weight:bold;user-select:none;";
 
@@ -45,6 +46,25 @@ function addManualButtons() {
         return;
       }
 
+      if (btn.dataset.saved === "true") {
+        // 이미 저장된 상태 → 다시 누르면 취소(삭제)
+        btn.textContent = "…";
+        chrome.runtime.sendMessage({ action: "deleteTweet", id: payload.id }, (response) => {
+          if (chrome.runtime.lastError || !response?.ok) {
+            btn.textContent = "!";
+            btn.style.color = "rgb(200,50,50)";
+            btn.title = "취소 실패: " + (response?.error || "확장 프로그램을 새로고침 해보세요");
+            return;
+          }
+          btn.textContent = "＋";
+          btn.style.color = "rgb(83,100,113)";
+          btn.dataset.saved = "false";
+          btn.title = "트윗 아카이버에 추가";
+        });
+        return;
+      }
+
+      // 저장되지 않은 상태 → 추가
       btn.textContent = "…";
       btn.style.color = "rgb(83,100,113)";
 
@@ -59,9 +79,8 @@ function addManualButtons() {
         if (response?.ok) {
           btn.textContent = "✓";
           btn.style.color = "rgb(0,150,90)";
-          btn.title = response.skipped
-            ? "이미 아카이브에 저장된 트윗입니다"
-            : "아카이브에 저장되었습니다";
+          btn.dataset.saved = "true";
+          btn.title = "아카이브됨 (다시 누르면 취소)";
         } else {
           btn.textContent = "!";
           btn.style.color = "rgb(200,50,50)";
@@ -76,8 +95,14 @@ function addManualButtons() {
 }
 
 function buildManualPayload(article) {
-  const statusLink = article.querySelector('a[href*="/status/"]');
-  const href = statusLink ? statusLink.getAttribute("href") : null;
+  // 트윗 본문에 다른 트윗 링크가 텍스트로 포함되어 있으면 그게 먼저 매칭되는 문제를 피하기 위해
+  // "이 트윗 자체의 타임스탬프를 감싸는 링크"를 우선적으로 찾는다 (X의 표준 마크업)
+  const timeEl = article.querySelector("time");
+  const permalinkAnchor = timeEl ? timeEl.closest('a[href*="/status/"]') : null;
+  const fallbackAnchor = article.querySelector('a[href*="/status/"]');
+  const anchor = permalinkAnchor || fallbackAnchor;
+
+  const href = anchor ? anchor.getAttribute("href") : null;
   const match = href ? href.match(/^\/([^/]+)\/status\/(\d+)/) : null;
 
   if (!match) return null;
@@ -86,10 +111,8 @@ function buildManualPayload(article) {
   const id = match[2];
   const textEl = article.querySelector('[data-testid="tweetText"]');
   const text = textEl ? textEl.innerText : "";
-  const timeEl = article.querySelector("time");
   const createdAt = timeEl ? timeEl.getAttribute("datetime") : null;
 
-  // 이미지/동영상 첨부 여부 감지 (DOM 기반)
   const media = [];
   if (article.querySelector('[data-testid="tweetPhoto"]')) media.push("photo");
   if (article.querySelector("video") || article.querySelector('[data-testid="videoPlayer"]')) {
