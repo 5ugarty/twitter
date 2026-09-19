@@ -4,9 +4,19 @@
 
   function extractPayload(tweetResult) {
     const legacy = tweetResult.legacy || {};
-    const userLegacy = tweetResult.core?.user_results?.result?.legacy || {};
+    const userResult = tweetResult.core?.user_results?.result || {};
 
-    const handle = userLegacy.screen_name || "";
+    // X가 유저 정보 일부를 legacy에서 core로 옮기는 구조 변경을 해서, 여러 경로를 다 시도
+    const handle =
+      userResult.legacy?.screen_name ||
+      userResult.core?.screen_name ||
+      userResult.screen_name ||
+      "";
+
+    if (!handle) {
+      console.warn("[트윗 아카이버 디버그] 핸들을 못 찾았어요. userResult 구조:", userResult);
+    }
+
     const id = tweetResult.rest_id;
     const isQuote = !!(legacy.is_quote_status || legacy.quoted_status_permalink);
 
