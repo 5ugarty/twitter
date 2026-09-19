@@ -177,6 +177,7 @@
   <div class="topbar-actions">
     <button id="refreshBtn">↻ 새로고침</button>
     <button id="settingsBtn">⚙ 설정</button>
+    <button id="lockBtn" title="이 탭에서만 즉시 잠그기">🔒 잠그기</button>
   </div>
 </div>
 
@@ -205,6 +206,7 @@
 
 <script>
 const VAULT_KEY = 'tweetArchiverVault'; // 암호화된 {githubToken, gistId}만 저장됨
+const SESSION_KEY = 'tweetArchiverSession'; // 이번 탭/브라우저 세션에서만 유지되는 캐시 (탭 닫으면 사라짐)
 const FILE_NAME = 'tweet-archive.json';
 
 let settings = null; // 메모리에만 존재 (복호화 성공 후에만 채워짐, 평문으로 저장되지 않음)
@@ -273,11 +275,27 @@ function saveVault(vault) {
   localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
 }
 
+// sessionStorage: 탭을 닫으면 사라지는 임시 캐시. 여기에 있으면 새로고침해도 비밀번호를 다시 안 물어봄
+function getSessionSettings() {
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+function setSessionSettings(s) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(s));
+}
+function clearSessionSettings() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
 /* ---------- 잠금 해제 / 최초 설정 모달 ---------- */
 
 async function requireUnlock(onSuccess) {
-  const vault = getVault();
   if (settings) { onSuccess(); return; }
+
+  const cached = getSessionSettings();
+  if (cached) { settings = cached; onSuccess(); return; }
+
+  const vault = getVault();
   if (!vault) { openSetupModal(onSuccess); return; }
   openUnlockModal(vault, onSuccess);
 }
@@ -302,6 +320,7 @@ function openUnlockModal(vault, onSuccess) {
     const pw = document.getElementById('unlockPw').value;
     try {
       settings = await decryptVault(pw, vault);
+      setSessionSettings(settings);
       overlay.remove();
       onSuccess();
     } catch (err) {
@@ -314,6 +333,7 @@ function openUnlockModal(vault, onSuccess) {
   document.getElementById('resetLink').addEventListener('click', () => {
     if (!confirm('저장된 토큰 정보를 지우고 새로 설정할까요? 기존 비밀번호로는 더 이상 열 수 없게 됩니다.')) return;
     localStorage.removeItem(VAULT_KEY);
+    clearSessionSettings();
     overlay.remove();
     openSetupModal(onSuccess);
   });
@@ -352,6 +372,7 @@ function openSetupModal(onSuccess) {
     const vault = await encryptVault(pw, { githubToken, gistId });
     saveVault(vault);
     settings = { githubToken, gistId };
+    setSessionSettings(settings);
     overlay.remove();
     onSuccess();
   });
@@ -598,6 +619,13 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
   requireUnlock(() => openSetupModal(fetchAndRenderFromGist));
 });
 document.getElementById('refreshBtn').addEventListener('click', () => requireUnlock(fetchAndRenderFromGist));
+document.getElementById('lockBtn').addEventListener('click', () => {
+  settings = null;
+  clearSessionSettings();
+  data = { items: [] };
+  render();
+  requireUnlock(fetchAndRenderFromGist);
+});
 document.getElementById('searchInput').addEventListener('input', (e) => { searchTerm = e.target.value; renderCards(); });
 document.getElementById('addFolderBtn').addEventListener('click', () => {
   const input = document.getElementById('newFolderInput');
