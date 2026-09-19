@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>트윗 색인함</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;600;700&family=Noto+Serif+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --drawer: #2b2620;
+    --drawer-dark: #211d18;
+    --paper: #ede4d3;
+    --paper-shadow: #dcd0b8;
+    --ink: #1c1b19;
+    --ink-soft: #55504a;
+    --brass: #9c7a3c;
+    --brass-light: #c9a75e;
+    --stamp: #a13d2e;
+    --quote: #2f5d50;
+    --manual: #395c8a;
+    --line: rgba(28,27,25,0.16);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--drawer);
+    background-image: linear-gradient(180deg, var(--drawer-dark) 0%, var(--drawer) 120px);
+    color: var(--paper);
+    font-family: 'Noto Serif KR', serif;
+    min-height: 100vh;
+  }
+  .topbar { display:flex; align-items:baseline; justify-content:space-between; padding:28px 36px 18px; border-bottom:1px solid rgba(237,228,211,0.15); }
+  .topbar h1 { font-family:'Zilla Slab',serif; font-weight:700; font-size:26px; margin:0; color:var(--paper); }
+  .topbar .eyebrow { font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.12em; color:var(--brass-light); text-transform:uppercase; margin-bottom:4px; display:block; }
+  .topbar-actions button { font-family:'IBM Plex Mono',monospace; font-size:12px; background:transparent; border:1px solid rgba(237,228,211,0.35); color:var(--paper); padding:8px 14px; border-radius:3px; cursor:pointer; margin-left:8px; }
+  .topbar-actions button:hover { border-color:var(--brass-light); color:var(--brass-light); }
+  .layout { display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 88px); }
+  .sidebar { padding:24px 0; border-right:1px solid rgba(237,228,211,0.12); }
+  .sidebar h2 { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--brass-light); padding:0 24px; margin:0 0 10px; }
+  .folder-tab { display:flex; justify-content:space-between; align-items:center; padding:10px 24px; cursor:pointer; font-size:14px; color:rgba(237,228,211,0.75); border-left:3px solid transparent; }
+  .folder-tab:hover { background:rgba(237,228,211,0.05); }
+  .folder-tab.active { color:var(--paper); background:rgba(237,228,211,0.08); border-left-color:var(--brass-light); }
+  .folder-tab .count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--brass-light); }
+  .add-folder-row { display:flex; padding:10px 24px 0; gap:6px; }
+  .add-folder-row input { flex:1; background:transparent; border:1px solid rgba(237,228,211,0.25); color:var(--paper); font-size:12px; padding:6px 8px; border-radius:3px; font-family:'IBM Plex Mono',monospace; }
+  .add-folder-row button { background:none; border:1px solid var(--brass-light); color:var(--brass-light); border-radius:3px; cursor:pointer; padding:0 10px; font-size:13px; }
+  .main { padding:28px 36px 60px; }
+  .search-row { display:flex; gap:10px; margin-bottom:22px; }
+  .search-row input { flex:1; background:rgba(237,228,211,0.06); border:1px solid rgba(237,228,211,0.2); color:var(--paper); padding:10px 14px; font-size:14px; border-radius:4px; font-family:'Noto Serif KR',serif; }
+  .search-row input::placeholder { color:rgba(237,228,211,0.4); }
+  .cards-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:22px; }
+  .card { background:var(--paper); color:var(--ink); border-radius:2px; box-shadow:0 6px 0 var(--paper-shadow), 0 10px 18px rgba(0,0,0,0.35); padding:20px 20px 18px; position:relative; display:flex; flex-direction:column; gap:12px; }
+  .card::before { content:""; position:absolute; top:14px; left:14px; width:8px; height:8px; border-radius:50%; background:var(--drawer-dark); box-shadow:inset 0 1px 2px rgba(0,0,0,0.5); }
+  .card-tab { align-self:flex-start; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 10px 3px 22px; border-radius:0 3px 3px 0; color:#fff; }
+  .card-tab.own { background:var(--ink-soft); }
+  .card-tab.quote { background:var(--quote); }
+  .card-tab.manual { background:var(--manual); }
+  .card-text { font-size:15px; line-height:1.6; white-space:pre-wrap; padding-left:6px; }
+  .card-meta { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft); display:flex; justify-content:space-between; border-top:1px dashed var(--line); padding-top:10px; }
+  .card-meta a { color:var(--brass); text-decoration:none; }
+  .card-meta a:hover { text-decoration:underline; }
+  .card-form { display:flex; gap:6px; border-top:1px dashed var(--line); padding-top:12px; }
+  .card-form select, .card-form input { font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:#fff; }
+  .card-form select { flex:0 0 100px; }
+  .card-form input { flex:1; }
+  .card-form button { background:var(--stamp); color:#fff; border:none; border-radius:3px; padding:0 12px; font-size:12px; cursor:pointer; font-family:'IBM Plex Mono',monospace; }
+  .card-form button:hover { background:#8a3226; }
+  .card.archived .card-form { opacity:0.5; }
+  .archived-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--quote); }
+  .tag-chip { display:inline-block; background:rgba(28,27,25,0.06); border-radius:10px; padding:2px 9px; font-size:11px; margin-right:4px; font-family:'IBM Plex Mono',monospace; }
+  .empty-state { color:rgba(237,228,211,0.5); font-family:'IBM Plex Mono',monospace; font-size:13px; padding:60px 0; text-align:center; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:100; }
+  .modal { background:var(--paper); color:var(--ink); padding:28px; border-radius:4px; width:380px; font-family:'Noto Serif KR',serif; }
+  .modal h3 { font-family:'Zilla Slab',serif; margin-top:0; }
+  .modal label { display:block; font-size:12px; margin-top:14px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; }
+  .modal input { width:100%; box-sizing:border-box; padding:8px 10px; margin-top:5px; border:1px solid var(--line); border-radius:3px; font-size:13px; }
+  .modal .hint { font-size:11px; color:var(--ink-soft); margin-top:6px; line-height:1.5; }
+  .modal button.primary { margin-top:18px; width:100%; padding:10px; background:var(--ink); color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:14px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <span class="eyebrow">Card Catalog · 색인함</span>
+    <h1>트윗 색인함</h1>
+  </div>
+  <div class="topbar-actions">
+    <button id="refreshBtn">새로고침</button>
+    <button id="settingsBtn">설정</button>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <h2>서랍</h2>
+    <div id="folderList"></div>
+    <div class="add-folder-row">
+      <input type="text" id="newFolderInput" placeholder="새 서랍 이름" />
+      <button id="addFolderBtn">+</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="트윗 내용 검색..." />
+    </div>
+    <div class="cards-grid" id="cardsGrid"></div>
+    <div class="empty-state" id="emptyState" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'tweetArchiverSettings';
+const FILE_NAME = 'tweet-archive.json';
+
+let settings = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+let data = { items: [] };
+let folders = JSON.parse(localStorage.getItem('tweetArchiverFolders') || '[]');
+let currentFilter = 'unclassified';
+let searchTerm = '';
+
+function saveFolders() {
+  localStorage.setItem('tweetArchiverFolders', JSON.stringify(folders));
+}
+
+function openSettingsModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Gist 연결 설정</h3>
+      <label>GitHub Personal Access Token</label>
+      <input type="password" id="modalToken" placeholder="ghp_..." value="${settings?.githubToken || ''}" />
+      <label>Gist ID</label>
+      <input type="text" id="modalGistId" placeholder="예: a1b2c3d4..." value="${settings?.gistId || ''}" />
+      <div class="hint">확장 프로그램 팝업에서 사용한 것과 <b>같은</b> 토큰/Gist ID를 입력하세요. 토큰에는 gist 권한이 필요합니다.</div>
+      <button class="primary" id="modalSave">저장하고 불러오기</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('modalSave').addEventListener('click', async () => {
+    const githubToken = document.getElementById('modalToken').value.trim();
+    const gistId = document.getElementById('modalGistId').value.trim();
+    settings = { githubToken, gistId };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    overlay.remove();
+    await loadFromGist();
+  });
+}
+
+async function loadFromGist() {
+  if (!settings?.githubToken || !settings?.gistId) {
+    openSettingsModal();
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.github.com/gists/${settings.gistId}`, {
+      headers: {
+        Authorization: `token ${settings.githubToken}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (!res.ok) throw new Error('Gist를 불러오지 못했습니다 (' + res.status + ')');
+    const gist = await res.json();
+    const content = gist.files?.[FILE_NAME]?.content;
+    data = content ? JSON.parse(content) : { items: [] };
+    if (!Array.isArray(data.items)) data.items = [];
+
+    data.items.forEach((item) => {
+      if (item.folder && !folders.includes(item.folder)) folders.push(item.folder);
+    });
+    saveFolders();
+
+    render();
+  } catch (err) {
+    alert('불러오기 실패: ' + err.message);
+  }
+}
+
+async function saveToGist() {
+  const res = await fetch(`https://api.github.com/gists/${settings.gistId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `token ${settings.githubToken}`,
+      Accept: 'application/vnd.github+json',
+    },
+    body: JSON.stringify({
+      files: { [FILE_NAME]: { content: JSON.stringify(data, null, 2) } },
+    }),
+  });
+  if (!res.ok) alert('저장 실패 (' + res.status + ')');
+}
+
+function sourceLabel(source) {
+  if (source === 'quote') return { text: '인용', cls: 'quote' };
+  if (source === 'manual') return { text: '수동추가', cls: 'manual' };
+  return { text: '본인트윗', cls: 'own' };
+}
+
+function renderFolderList() {
+  const list = document.getElementById('folderList');
+  const unclassifiedCount = data.items.filter((i) => !i.folder).length;
+
+  let html = `
+    <div class="folder-tab ${currentFilter === 'all' ? 'active' : ''}" data-filter="all">
+      <span>전체</span><span class="count">${data.items.length}</span>
+    </div>
+    <div class="folder-tab ${currentFilter === 'unclassified' ? 'active' : ''}" data-filter="unclassified">
+      <span>미분류</span><span class="count">${unclassifiedCount}</span>
+    </div>
+  `;
+  folders.forEach((f) => {
+    const count = data.items.filter((i) => i.folder === f).length;
+    html += `
+      <div class="folder-tab ${currentFilter === f ? 'active' : ''}" data-filter="${f}">
+        <span>${f}</span><span class="count">${count}</span>
+      </div>
+    `;
+  });
+  list.innerHTML = html;
+
+  list.querySelectorAll('.folder-tab').forEach((el) => {
+    el.addEventListener('click', () => { currentFilter = el.dataset.filter; render(); });
+  });
+}
+
+function folderOptionsHtml(selected) {
+  let html = `<option value="">폴더 선택</option>`;
+  folders.forEach((f) => {
+    html += `<option value="${f}" ${selected === f ? 'selected' : ''}>${f}</option>`;
+  });
+  return html;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderCards() {
+  const grid = document.getElementById('cardsGrid');
+  const emptyState = document.getElementById('emptyState');
+
+  let items = data.items;
+  if (currentFilter === 'unclassified') items = items.filter((i) => !i.folder);
+  else if (currentFilter !== 'all') items = items.filter((i) => i.folder === currentFilter);
+  if (searchTerm) items = items.filter((i) => (i.text || '').toLowerCase().includes(searchTerm.toLowerCase()));
+
+  if (items.length === 0) {
+    grid.innerHTML = '';
+    emptyState.style.display = 'block';
+    emptyState.textContent = currentFilter === 'unclassified'
+      ? '미분류 트윗이 없어요. 트위터에 새로 작성하면 여기 나타납니다.'
+      : '이 서랍에는 아직 트윗이 없어요.';
+    return;
+  }
+  emptyState.style.display = 'none';
+
+  grid.innerHTML = items.map((item) => {
+    const realIdx = data.items.indexOf(item);
+    const label = sourceLabel(item.source);
+    const isArchived = !!item.folder;
+    const date = item.createdAt ? new Date(item.createdAt).toLocaleDateString('ko-KR') : '';
+    const tagsHtml = (item.tags || []).map((t) => `<span class="tag-chip">#${t}</span>`).join(' ');
+
+    return `
+      <div class="card ${isArchived ? 'archived' : ''}" data-idx="${realIdx}">
+        <span class="card-tab ${label.cls}">${label.text}</span>
+        <div class="card-text">${escapeHtml(item.text || '(내용 없음)')}</div>
+        <div class="card-meta">
+          <span>@${item.handle || '?'} · ${date}</span>
+          ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener">원문 보기 ↗</a>` : ''}
+        </div>
+        ${isArchived
+          ? `<div class="archived-badge">✓ ${item.folder} ${tagsHtml}</div>`
+          : `
+          <div class="card-form">
+            <select class="folder-select">${folderOptionsHtml(item.folder)}</select>
+            <input type="text" class="tag-input" placeholder="태그 (쉼표로 구분)" />
+            <button class="save-btn">저장</button>
+          </div>
+        `}
+      </div>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.card').forEach((cardEl) => {
+    const idx = Number(cardEl.dataset.idx);
+    const saveBtn = cardEl.querySelector('.save-btn');
+    if (!saveBtn) return;
+    saveBtn.addEventListener('click', async () => {
+      const folder = cardEl.querySelector('.folder-select').value.trim();
+      const tagsRaw = cardEl.querySelector('.tag-input').value.trim();
+      if (!folder) { alert('폴더를 선택해주세요.'); return; }
+      const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
+
+      data.items[idx].folder = folder;
+      data.items[idx].tags = tags;
+      data.items[idx].archivedAt = new Date().toISOString();
+
+      if (!folders.includes(folder)) { folders.push(folder); saveFolders(); }
+
+      saveBtn.textContent = '저장중...';
+      await saveToGist();
+      render();
+    });
+  });
+}
+
+function render() {
+  renderFolderList();
+  renderCards();
+}
+
+document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
+document.getElementById('refreshBtn').addEventListener('click', loadFromGist);
+document.getElementById('searchInput').addEventListener('input', (e) => { searchTerm = e.target.value; renderCards(); });
+document.getElementById('addFolderBtn').addEventListener('click', () => {
+  const input = document.getElementById('newFolderInput');
+  const name = input.value.trim();
+  if (!name) return;
+  if (!folders.includes(name)) { folders.push(name); saveFolders(); }
+  input.value = '';
+  render();
+});
+
+loadFromGist();
+</script>
+</body>
+</html>
