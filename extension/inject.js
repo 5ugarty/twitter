@@ -29,6 +29,11 @@
               legacy.is_quote_status || legacy.quoted_status_permalink
             );
 
+            // 이미지/동영상 첨부 여부 추출
+            const mediaList =
+              legacy.extended_entities?.media || legacy.entities?.media || [];
+            const mediaTypes = [...new Set(mediaList.map((m) => m.type))]; // 'photo' | 'video' | 'animated_gif'
+
             const payload = {
               id,
               handle,
@@ -37,6 +42,7 @@
               url: id && handle ? `https://x.com/${handle}/status/${id}` : null,
               isQuote,
               quotedUrl: legacy.quoted_status_permalink?.expanded || null,
+              media: mediaTypes,
               source: isQuote ? "quote" : "own",
               capturedAt: new Date().toISOString(),
             };

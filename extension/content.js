@@ -89,6 +89,13 @@ function buildManualPayload(article) {
   const timeEl = article.querySelector("time");
   const createdAt = timeEl ? timeEl.getAttribute("datetime") : null;
 
+  // 이미지/동영상 첨부 여부 감지 (DOM 기반)
+  const media = [];
+  if (article.querySelector('[data-testid="tweetPhoto"]')) media.push("photo");
+  if (article.querySelector("video") || article.querySelector('[data-testid="videoPlayer"]')) {
+    media.push("video");
+  }
+
   return {
     id,
     handle,
@@ -97,6 +104,7 @@ function buildManualPayload(article) {
     url: `https://x.com/${handle}/status/${id}`,
     isQuote: false,
     quotedUrl: null,
+    media,
     source: "manual",
     capturedAt: new Date().toISOString(),
   };

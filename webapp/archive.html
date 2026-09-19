@@ -3,27 +3,23 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>트윗 색인함</title>
+<title>Tweet Archive</title>
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
 <style>
   :root {
     --bg: #ece0f2;
-    --bg-deep: #ddc9e8;
     --panel: #f6eefa;
     --ink: #443a52;
     --ink-soft: #7a6c8a;
     --white: #fffdff;
 
     --viewer: #f7eefb;
-    --viewer-text: #a58fc0;
     --subscriber: linear-gradient(135deg, #f0a8cc, #d98fc9);
     --subscriber-text: #ffffff;
     --vip: linear-gradient(135deg, #8f7bb0, #5c4a78);
     --vip-text: #ffffff;
     --moderator: linear-gradient(135deg, #f6c6dd, #f0a8cc);
     --moderator-text: #6b4a63;
-    --streamer: linear-gradient(135deg, #2c2433, #1b1620);
-    --streamer-text: #f0c6de;
 
     --pink: #ea9bc4;
     --pink-deep: #d874ae;
@@ -31,7 +27,7 @@
     --line: #e3cdec;
   }
 
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; min-width: 0; }
 
   body {
     margin: 0;
@@ -64,13 +60,6 @@
     color: var(--purple);
     letter-spacing: -0.01em;
   }
-  .topbar .eyebrow {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: var(--pink-deep);
-    text-transform: uppercase;
-  }
   .topbar-actions button {
     font-family: inherit;
     font-weight: 700;
@@ -97,15 +86,14 @@
     display: flex; justify-content: space-between; align-items: center;
     padding: 11px 16px; cursor: pointer; font-size: 14px; font-weight: 600;
     color: var(--ink-soft); border-radius: 999px; margin-bottom: 6px;
-    border: 1.5px dashed transparent;
   }
   .folder-tab:hover { background: var(--panel); }
   .folder-tab.active {
-    color: var(--white);
+    color: #fff;
     background: var(--subscriber);
     box-shadow: 0 3px 0 rgba(216,116,174,0.3);
   }
-  .folder-tab.active .count { color: var(--white); }
+  .folder-tab.active .count { color: #fff; background: rgba(255,255,255,0.3); }
   .folder-tab .count {
     font-size: 11.5px; font-weight: 700; color: var(--pink-deep);
     background: rgba(255,255,255,0.5); padding: 1px 8px; border-radius: 999px;
@@ -117,18 +105,24 @@
     font-family: inherit;
   }
   .add-folder-row button {
-    background: var(--moderator); border: none; color: var(--moderator-text);
+    background: var(--moderator); border: none; color: #6b4a63;
     border-radius: 50%; cursor: pointer; width: 32px; height: 32px; font-size: 15px; font-weight: 700;
+    flex-shrink: 0;
   }
 
   .main { padding: 20px 36px 60px; }
-  .search-row { display: flex; gap: 10px; margin-bottom: 22px; }
+  .search-row { display: flex; gap: 10px; margin-bottom: 10px; }
   .search-row input {
     flex: 1; background: var(--white); border: 1.5px dashed var(--line);
     color: var(--ink); padding: 12px 18px; font-size: 14px; border-radius: 999px;
     font-family: inherit;
   }
   .search-row input::placeholder { color: #c3aed1; }
+  .search-hint {
+    font-size: 11.5px; color: var(--ink-soft); font-weight: 600; margin: 0 0 18px 6px;
+    display: none;
+  }
+  .search-hint.active { display: block; }
 
   .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
 
@@ -137,9 +131,9 @@
     border-radius: 20px;
     border: 1.5px dashed var(--line);
     padding: 4px;
-    position: relative;
     display: flex; flex-direction: column;
     box-shadow: 0 4px 0 #e3cdec;
+    overflow: hidden;
   }
 
   .card-tag {
@@ -149,36 +143,49 @@
     padding: 6px 14px 6px 12px;
     border-radius: 999px 999px 999px 4px;
     margin: 8px 0 0 10px;
+    white-space: nowrap;
   }
   .card-tag.own { background: var(--subscriber); color: var(--subscriber-text); }
   .card-tag.quote { background: var(--vip); color: var(--vip-text); }
   .card-tag.manual { background: var(--moderator); color: var(--moderator-text); }
 
-  .card-body { padding: 10px 16px 14px; display: flex; flex-direction: column; gap: 12px; }
+  .card-body { padding: 10px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
 
-  .card-text { font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; color: var(--ink); }
+  .card-text { font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; color: var(--ink); word-break: break-word; }
+
+  .media-chip {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    background: var(--panel); color: var(--purple);
+    padding: 3px 10px; border-radius: 999px; margin-right: 4px;
+  }
 
   .card-meta {
     font-size: 11.5px; color: var(--ink-soft); font-weight: 600;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
     border-top: 1.5px dashed var(--line); padding-top: 10px;
+    flex-wrap: wrap;
   }
-  .card-meta a { color: var(--pink-deep); text-decoration: none; font-weight: 700; }
+  .card-meta a { color: var(--pink-deep); text-decoration: none; font-weight: 700; white-space: nowrap; }
   .card-meta a:hover { text-decoration: underline; }
+  .card-meta .handle-date { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .card-form {
-    display: flex; gap: 6px; border-top: 1.5px dashed var(--line); padding-top: 12px;
+    display: flex; flex-wrap: wrap; gap: 6px;
+    border-top: 1.5px dashed var(--line); padding-top: 12px;
   }
+  .card-form-row { display: flex; gap: 6px; width: 100%; }
   .card-form select, .card-form input {
     font-family: inherit; font-size: 12px; font-weight: 600;
     padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 999px;
     background: var(--panel); color: var(--ink);
+    min-width: 0;
   }
-  .card-form select { flex: 0 0 96px; }
+  .card-form select { flex: 0 0 42%; }
   .card-form input { flex: 1; }
   .card-form button {
+    width: 100%;
     background: var(--pink-deep); color: #fff; border: none; border-radius: 999px;
-    padding: 0 16px; font-size: 12px; font-weight: 800; cursor: pointer;
+    padding: 9px 0; font-size: 12.5px; font-weight: 800; cursor: pointer;
   }
   .card-form button:hover { background: #c25f9a; }
 
@@ -223,10 +230,7 @@
 <div class="topbar">
   <div class="brand">
     <div class="icon">🎀</div>
-    <div>
-      <span class="eyebrow">Tweet Archive</span>
-      <h1>트윗 색인함</h1>
-    </div>
+    <h1>Tweet Archive</h1>
   </div>
   <div class="topbar-actions">
     <button id="refreshBtn">↻ 새로고침</button>
@@ -246,8 +250,9 @@
 
   <div class="main">
     <div class="search-row">
-      <input type="text" id="searchInput" placeholder="트윗 내용 검색..." />
+      <input type="text" id="searchInput" placeholder="트윗 내용 검색... (모든 폴더 대상)" />
     </div>
+    <div class="search-hint" id="searchHint">🔍 검색 중에는 모든 서랍을 통틀어 찾습니다</div>
     <div class="cards-grid" id="cardsGrid"></div>
     <div class="empty-state" id="emptyState" style="display:none;"></div>
   </div>
@@ -342,6 +347,22 @@ function sourceLabel(source) {
   return { text: 'Subscriber · 본인트윗', cls: 'own', icon: '🩰' };
 }
 
+function mediaBadges(media) {
+  if (!media || !media.length) return '';
+  const labels = [];
+  if (media.includes('photo')) labels.push('🖼 이미지');
+  if (media.includes('video') || media.includes('animated_gif')) labels.push('🎬 동영상');
+  return labels.map((l) => `<span class="media-chip">${l}</span>`).join(' ');
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function renderFolderList() {
   const list = document.getElementById('folderList');
   const unclassifiedCount = data.items.filter((i) => !i.folder).length;
@@ -369,10 +390,16 @@ function renderFolderList() {
   });
 }
 
-function folderOptionsHtml(selected) {
+// selected: 현재 저장된 값 / suggestedHandle: 아이디별 자동 분류를 위한 기본값
+function folderOptionsHtml(selected, suggestedHandle) {
+  const optionSet = [...folders];
+  if (suggestedHandle && !optionSet.includes(suggestedHandle)) optionSet.push(suggestedHandle);
+
+  const effectiveSelected = selected || suggestedHandle || '';
+
   let html = `<option value="">폴더 선택</option>`;
-  folders.forEach((f) => {
-    html += `<option value="${f}" ${selected === f ? 'selected' : ''}>${f}</option>`;
+  optionSet.forEach((f) => {
+    html += `<option value="${f}" ${effectiveSelected === f ? 'selected' : ''}>${f}</option>`;
   });
   return html;
 }
@@ -386,18 +413,28 @@ function escapeHtml(str) {
 function renderCards() {
   const grid = document.getElementById('cardsGrid');
   const emptyState = document.getElementById('emptyState');
+  const searchHint = document.getElementById('searchHint');
 
-  let items = data.items;
-  if (currentFilter === 'unclassified') items = items.filter((i) => !i.folder);
-  else if (currentFilter !== 'all') items = items.filter((i) => i.folder === currentFilter);
-  if (searchTerm) items = items.filter((i) => (i.text || '').toLowerCase().includes(searchTerm.toLowerCase()));
+  searchHint.classList.toggle('active', !!searchTerm);
+
+  let items;
+  if (searchTerm) {
+    // 검색 중에는 폴더 구분 없이 전체 대상
+    items = data.items.filter((i) => (i.text || '').toLowerCase().includes(searchTerm.toLowerCase()));
+  } else {
+    items = data.items;
+    if (currentFilter === 'unclassified') items = items.filter((i) => !i.folder);
+    else if (currentFilter !== 'all') items = items.filter((i) => i.folder === currentFilter);
+  }
 
   if (items.length === 0) {
     grid.innerHTML = '';
     emptyState.style.display = 'block';
-    emptyState.textContent = currentFilter === 'unclassified'
-      ? '🎀 미분류 트윗이 없어요. 트위터에 새로 작성하면 여기 나타납니다.'
-      : '이 서랍에는 아직 트윗이 없어요.';
+    emptyState.textContent = searchTerm
+      ? '검색 결과가 없어요.'
+      : currentFilter === 'unclassified'
+        ? '🎀 미분류 트윗이 없어요. 트위터에 새로 작성하면 여기 나타납니다.'
+        : '이 서랍에는 아직 트윗이 없어요.';
     return;
   }
   emptyState.style.display = 'none';
@@ -406,24 +443,28 @@ function renderCards() {
     const realIdx = data.items.indexOf(item);
     const label = sourceLabel(item.source);
     const isArchived = !!item.folder;
-    const date = item.createdAt ? new Date(item.createdAt).toLocaleDateString('ko-KR') : '';
+    const dateTime = formatDateTime(item.createdAt);
     const tagsHtml = (item.tags || []).map((t) => `<span class="tag-chip">#${t}</span>`).join(' ');
+    const mediaHtml = mediaBadges(item.media);
 
     return `
       <div class="card ${isArchived ? 'archived' : ''}" data-idx="${realIdx}">
         <span class="card-tag ${label.cls}">${label.icon} ${label.text}</span>
         <div class="card-body">
           <div class="card-text">${escapeHtml(item.text || '(내용 없음)')}</div>
+          ${mediaHtml ? `<div>${mediaHtml}</div>` : ''}
           <div class="card-meta">
-            <span>@${item.handle || '?'} · ${date}</span>
+            <span class="handle-date">@${item.handle || '?'} · ${dateTime}</span>
             ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener">원문 보기 ↗</a>` : ''}
           </div>
           ${isArchived
             ? `<div class="archived-badge">✓ ${item.folder} ${tagsHtml}</div>`
             : `
             <div class="card-form">
-              <select class="folder-select">${folderOptionsHtml(item.folder)}</select>
-              <input type="text" class="tag-input" placeholder="태그 (쉼표로 구분)" />
+              <div class="card-form-row">
+                <select class="folder-select">${folderOptionsHtml(item.folder, item.handle)}</select>
+                <input type="text" class="tag-input" placeholder="태그 (쉼표로 구분)" />
+              </div>
               <button class="save-btn">저장</button>
             </div>
           `}
