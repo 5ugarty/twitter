@@ -1,14 +1,7 @@
-// 1) inject.js를 페이지 컨텍스트에 삽입 (fetch 가로채기 위함)
-(function injectScript() {
-  const script = document.createElement("script");
-  script.src = chrome.runtime.getURL("inject.js");
-  script.onload = function () {
-    this.remove();
-  };
-  (document.head || document.documentElement).appendChild(script);
-})();
+// inject.js는 이제 manifest.json에 의해 MAIN 월드 콘텐츠 스크립트로 직접 실행되므로
+// 여기서 별도로 <script> 태그를 삽입할 필요가 없다.
 
-// 2) inject.js가 postMessage로 보낸 캡처 데이터를 받아서 background로 전달
+// inject.js가 postMessage로 보낸 캡처 데이터를 받아서 background로 전달
 window.addEventListener("message", (event) => {
   if (event.source !== window) return;
   if (event.data?.type !== "TWEET_ARCHIVER_CAPTURED") return;
@@ -19,7 +12,7 @@ window.addEventListener("message", (event) => {
   });
 });
 
-// 3) 트윗마다 추가/취소 토글 버튼을 삽입 (본인 트윗도 상태 확인/취소용으로 동일하게 붙음)
+// 트윗마다 추가/취소 토글 버튼을 삽입 (본인 트윗도 상태 확인/취소용으로 동일하게 붙음)
 function addManualButtons() {
   document.querySelectorAll('article[data-testid="tweet"]').forEach((article) => {
     if (article.dataset.archiverInjected) return;
@@ -47,7 +40,6 @@ function addManualButtons() {
       }
 
       if (btn.dataset.saved === "true") {
-        // 이미 저장된 상태 → 다시 누르면 취소(삭제)
         btn.textContent = "…";
         chrome.runtime.sendMessage({ action: "deleteTweet", id: payload.id }, (response) => {
           if (chrome.runtime.lastError || !response?.ok) {
@@ -64,7 +56,6 @@ function addManualButtons() {
         return;
       }
 
-      // 저장되지 않은 상태 → 추가
       btn.textContent = "…";
       btn.style.color = "rgb(83,100,113)";
 
@@ -80,7 +71,9 @@ function addManualButtons() {
           btn.textContent = "✓";
           btn.style.color = "rgb(0,150,90)";
           btn.dataset.saved = "true";
-          btn.title = "아카이브됨 (다시 누르면 취소)";
+          btn.title = response.skipped
+            ? "이미 아카이브에 저장된 트윗입니다 (다시 누르면 취소)"
+            : "아카이브됨 (다시 누르면 취소)";
         } else {
           btn.textContent = "!";
           btn.style.color = "rgb(200,50,50)";
@@ -95,8 +88,6 @@ function addManualButtons() {
 }
 
 function buildManualPayload(article) {
-  // 트윗 본문에 다른 트윗 링크가 텍스트로 포함되어 있으면 그게 먼저 매칭되는 문제를 피하기 위해
-  // "이 트윗 자체의 타임스탬프를 감싸는 링크"를 우선적으로 찾는다 (X의 표준 마크업)
   const timeEl = article.querySelector("time");
   const permalinkAnchor = timeEl ? timeEl.closest('a[href*="/status/"]') : null;
   const fallbackAnchor = article.querySelector('a[href*="/status/"]');

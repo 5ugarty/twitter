@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "트윗 아카이버",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "내가 쓴 트윗과 인용 트윗을 자동 캡처하고, 마음에 든 남의 트윗은 수동으로 추가해 GitHub Gist로 동기화합니다.",
   "permissions": ["storage"],
   "host_permissions": [
@@ -15,14 +15,14 @@
   "content_scripts": [
     {
       "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
       "js": ["content.js"],
       "run_at": "document_start"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["inject.js"],
-      "matches": ["https://x.com/*", "https://twitter.com/*"]
     }
   ],
   "action": {
