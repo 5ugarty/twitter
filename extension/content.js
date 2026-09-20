@@ -193,22 +193,11 @@ function buildManualPayload(article) {
   const text = textEl ? textEl.innerText : "";
   const createdAt = timeEl ? timeEl.getAttribute("datetime") : null;
 
-  // 트위터는 사진+동영상을 한 트윗에 같이 붙일 수 있다(믹스드 미디어).
-  // 다만 동영상 재생 전 썸네일 이미지에도 tweetPhoto 속성이 붙는 경우가 있어서,
-  // "비디오 플레이어 컨테이너 안에 있는" photo 요소는 썸네일로 보고 제외한다.
-  const videoContainer = article.querySelector(
-    '[data-testid="videoPlayer"], [data-testid="videoComponent"], video'
-  );
-  const hasVideo = !!videoContainer;
-
-  const photoEls = Array.from(article.querySelectorAll('[data-testid="tweetPhoto"]'));
-  const hasStandalonePhoto = photoEls.some(
-    (el) => !videoContainer || !videoContainer.contains(el)
-  );
-
   const media = [];
-  if (hasStandalonePhoto) media.push("photo");
-  if (hasVideo) media.push("video");
+  if (article.querySelector('[data-testid="tweetPhoto"]')) media.push("photo");
+  if (article.querySelector("video") || article.querySelector('[data-testid="videoPlayer"]')) {
+    media.push("video");
+  }
 
   return {
     id,

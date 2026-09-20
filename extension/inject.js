@@ -20,8 +20,6 @@
     const id = tweetResult.rest_id;
     const isQuote = !!(legacy.is_quote_status || legacy.quoted_status_permalink);
 
-    // API의 media type 필드는 원래부터 정확해서(사진+동영상 믹스드 미디어도 각각 올바르게 표시됨)
-    // 별도 보정이 필요 없다.
     const mediaList = legacy.extended_entities?.media || legacy.entities?.media || [];
     const mediaTypes = [...new Set(mediaList.map((m) => m.type))];
 
