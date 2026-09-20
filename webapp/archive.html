@@ -120,6 +120,9 @@
   .card-body { padding: 10px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
   .card-text { font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; color: var(--ink); word-break: break-word; }
   .media-chip { display: inline-block; font-size: 11px; font-weight: 700; background: var(--panel); color: var(--purple); padding: 3px 10px; border-radius: 999px; margin-right: 4px; }
+  .missing-badge { display: inline-block; font-size: 11px; font-weight: 800; background: #f6d9d5; color: var(--danger); padding: 3px 10px; border-radius: 999px; margin-right: 4px; }
+  .link-check-btn { background: none; border: none; cursor: pointer; font-size: 11px; color: var(--ink-soft); font-weight: 700; }
+  .link-check-btn:hover { color: var(--purple); }
 
   .card-meta {
     font-size: 11.5px; color: var(--ink-soft); font-weight: 600;
@@ -179,6 +182,7 @@
     <button id="refreshBtn">↻ 새로고침</button>
     <button id="settingsBtn">⚙ 설정</button>
     <button id="autoTagBtn" title="특정 단어가 포함되면 자동으로 태그를 붙이는 규칙">🏷 자동태그</button>
+    <button id="checkLinksBtn" title="원본 트윗이 삭제/비공개 되었는지 전체 확인">🔗 링크 확인</button>
     <button id="lockBtn" title="이 탭에서만 즉시 잠그기">🔒 잠그기</button>
   </div>
 </div>
@@ -240,24 +244,33 @@ function computeAutoTags(text) {
   const matched = [];
   rules.forEach((rule) => {
     const hit = (rule.keywords || []).some((kw) => kw && text.includes(kw));
-    if (hit) matched.push(rule.tag);
+    if (hit) {
+      const ruleTags = rule.tags || (rule.tag ? [rule.tag] : []); // 이전 형식(단일 tag) 호환
+      matched.push(...ruleTags);
+    }
   });
-  return matched;
+  return Array.from(new Set(matched));
 }
 
 function openAutoTagRulesModal() {
+  let editingIndex = null;
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
     <div class="modal">
       <h3>🏷 자동 태그 규칙</h3>
       <div class="hint">지정한 단어가 트윗 본문에 포함되어 있으면 저장할 때 해당 태그를 자동으로 제안해요. 예: 키워드 [거노, 건호, 고노] → 태그 "건호"</div>
-      <div id="ruleListInModal" style="margin-top:14px; max-height:200px; overflow-y:auto;"></div>
-      <label>태그 이름</label>
-      <input type="text" id="newRuleTag" placeholder="예: 건호" />
+      <input type="text" id="ruleSearchInput" placeholder="🔍 태그/키워드 검색" style="width:100%; box-sizing:border-box; padding:8px 12px; margin-top:12px; border:1.5px solid var(--line); border-radius:999px; font-size:12.5px; font-family:inherit;" />
+      <div id="ruleListInModal" style="margin-top:10px; max-height:200px; overflow-y:auto;"></div>
+      <label id="ruleFormLabel">태그 이름 (쉼표로 여러 개 지정 가능)</label>
+      <input type="text" id="newRuleTag" placeholder="예: 건호, 상대역" />
       <label>키워드 (쉼표로 구분)</label>
       <input type="text" id="newRuleKeywords" placeholder="예: 거노, 건호, 고노" />
-      <button class="primary" id="addRuleBtn">규칙 추가</button>
+      <div style="display:flex; gap:6px; margin-top:18px;">
+        <button class="primary" id="addRuleBtn" style="margin-top:0;">규칙 추가</button>
+        <button id="cancelEditBtn" style="display:none; flex:0 0 70px; background:var(--panel); color:var(--ink-soft); border:1.5px solid var(--line); border-radius:999px; font-size:12px; font-weight:700; cursor:pointer;">취소</button>
+      </div>
       <div class="reset-link" id="reapplyRulesLink">기존에 저장된 트윗들에도 지금 규칙 전체 재적용</div>
     </div>
   `;
@@ -265,41 +278,90 @@ function openAutoTagRulesModal() {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
   function renderRuleList() {
-    const rules = getAutoTagRules();
+    const searchTerm = document.getElementById('ruleSearchInput').value.trim().toLowerCase();
+    let rules = getAutoTagRules().map((r, i) => ({ ...r, _origIndex: i, tags: r.tags || (r.tag ? [r.tag] : []) }));
+
+    if (searchTerm) {
+      rules = rules.filter((r) =>
+        r.tags.some((t) => t.toLowerCase().includes(searchTerm)) ||
+        (r.keywords || []).some((k) => k.toLowerCase().includes(searchTerm))
+      );
+    }
+
+    // 가나다순(사전순) 정렬 — 첫 번째 태그 이름 기준
+    rules.sort((a, b) => (a.tags[0] || '').localeCompare(b.tags[0] || '', 'ko'));
+
     const list = document.getElementById('ruleListInModal');
     if (rules.length === 0) {
-      list.innerHTML = `<div style="font-size:12px; color:var(--ink-soft);">등록된 규칙이 없어요.</div>`;
+      list.innerHTML = `<div style="font-size:12px; color:var(--ink-soft);">${searchTerm ? '검색 결과가 없어요.' : '등록된 규칙이 없어요.'}</div>`;
       return;
     }
-    list.innerHTML = rules.map((r, i) => `
+
+    list.innerHTML = rules.map((r) => `
       <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px dashed var(--line);">
-        <div style="font-size:12.5px;"><b>#${r.tag}</b> ← ${(r.keywords || []).join(', ')}</div>
-        <button data-idx="${i}" class="rule-delete-btn" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;">삭제</button>
+        <div style="font-size:12.5px;"><b>${r.tags.map((t) => '#' + t).join(' ')}</b> ← ${(r.keywords || []).join(', ')}</div>
+        <div style="display:flex; gap:8px; flex-shrink:0;">
+          <button data-idx="${r._origIndex}" class="rule-edit-btn" style="background:none;border:none;color:var(--purple);cursor:pointer;font-size:12px;">수정</button>
+          <button data-idx="${r._origIndex}" class="rule-delete-btn" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;">삭제</button>
+        </div>
       </div>
     `).join('');
+
     list.querySelectorAll('.rule-delete-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const rules = getAutoTagRules();
         rules.splice(Number(btn.dataset.idx), 1);
         saveAutoTagRules(rules);
+        if (editingIndex === Number(btn.dataset.idx)) exitEditMode();
         renderRuleList();
       });
     });
+
+    list.querySelectorAll('.rule-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.idx);
+        const rules = getAutoTagRules();
+        const rule = rules[idx];
+        const ruleTags = rule.tags || (rule.tag ? [rule.tag] : []);
+        document.getElementById('newRuleTag').value = ruleTags.join(', ');
+        document.getElementById('newRuleKeywords').value = (rule.keywords || []).join(', ');
+        editingIndex = idx;
+        document.getElementById('addRuleBtn').textContent = '수정 완료';
+        document.getElementById('cancelEditBtn').style.display = 'block';
+        document.getElementById('ruleFormLabel').textContent = '태그 이름 수정 중 (쉼표로 여러 개 지정 가능)';
+      });
+    });
   }
+
+  function exitEditMode() {
+    editingIndex = null;
+    document.getElementById('newRuleTag').value = '';
+    document.getElementById('newRuleKeywords').value = '';
+    document.getElementById('addRuleBtn').textContent = '규칙 추가';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+    document.getElementById('ruleFormLabel').textContent = '태그 이름 (쉼표로 여러 개 지정 가능)';
+  }
+
   renderRuleList();
+  document.getElementById('ruleSearchInput').addEventListener('input', renderRuleList);
+  document.getElementById('cancelEditBtn').addEventListener('click', exitEditMode);
 
   document.getElementById('addRuleBtn').addEventListener('click', () => {
-    const tag = document.getElementById('newRuleTag').value.trim();
+    const tagsRaw = document.getElementById('newRuleTag').value.trim();
     const keywordsRaw = document.getElementById('newRuleKeywords').value.trim();
-    if (!tag || !keywordsRaw) { alert('태그 이름과 키워드를 모두 입력해주세요.'); return; }
+    if (!tagsRaw || !keywordsRaw) { alert('태그 이름과 키워드를 모두 입력해주세요.'); return; }
+    const tags = tagsRaw.split(',').map((t) => t.trim()).filter(Boolean);
     const keywords = keywordsRaw.split(',').map((k) => k.trim()).filter(Boolean);
 
     const rules = getAutoTagRules();
-    rules.push({ tag, keywords });
+    if (editingIndex !== null) {
+      rules[editingIndex] = { tags, keywords };
+    } else {
+      rules.push({ tags, keywords });
+    }
     saveAutoTagRules(rules);
 
-    document.getElementById('newRuleTag').value = '';
-    document.getElementById('newRuleKeywords').value = '';
+    exitEditMode();
     renderRuleList();
   });
 
@@ -530,6 +592,45 @@ function mediaBadges(media) {
   return labels.map((l) => `<span class="media-chip">${l}</span>`).join(' ');
 }
 
+/* ---------- 원본 트윗 삭제/비공개 여부 확인 (트위터 공개 oEmbed API, 로그인 불필요) ---------- */
+async function checkLinkStatus(url) {
+  try {
+    const res = await fetch(`https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&omit_script=true`);
+    if (res.status === 404) return 'missing';
+    if (res.ok) return 'ok';
+    return 'unknown';
+  } catch (e) {
+    return 'unknown';
+  }
+}
+
+async function checkSingleCardLink(item) {
+  if (!item.url) return;
+  const status = await checkLinkStatus(item.url);
+  item.linkStatus = status;
+  item.linkCheckedAt = new Date().toISOString();
+  await saveToGist();
+  render();
+}
+
+async function checkAllLinks() {
+  const targets = data.items.filter((i) => i.url);
+  if (targets.length === 0) { alert('확인할 트윗이 없어요.'); return; }
+  if (!confirm(`저장된 트윗 ${targets.length}개의 원본 링크 상태를 확인할까요? 개수가 많으면 시간이 좀 걸려요.`)) return;
+
+  let missingCount = 0;
+  for (const item of targets) {
+    const status = await checkLinkStatus(item.url);
+    item.linkStatus = status;
+    item.linkCheckedAt = new Date().toISOString();
+    if (status === 'missing') missingCount++;
+    await new Promise((r) => setTimeout(r, 350)); // API에 너무 빠르게 연타하지 않도록 살짝 대기
+  }
+  await saveToGist();
+  render();
+  alert(`확인 완료! 삭제/비공개로 보이는 트윗 ${missingCount}개 발견했어요.`);
+}
+
 function formatDateTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -554,11 +655,39 @@ function renderFolderList() {
     const count = data.items.filter((i) => i.folder === f).length;
     html += `
       <div class="folder-tab ${currentFilter === f ? 'active' : ''}" data-filter="${f}">
-        <span>🎀 ${f}</span><span class="count">${count}</span>
+        <span>🎀 ${f}</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+          <span class="count">${count}</span>
+          <span class="folder-rename-btn" data-folder="${f}" title="이름 수정" style="cursor:pointer; font-size:11px; opacity:0.75;">✎</span>
+        </span>
       </div>
     `;
   });
   list.innerHTML = html;
+
+  list.querySelectorAll('.folder-rename-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const oldName = btn.dataset.folder;
+      const newNameRaw = prompt('새 폴더 이름을 입력하세요', oldName);
+      if (newNameRaw === null) return;
+      const newName = newNameRaw.trim();
+      if (!newName || newName === oldName) return;
+
+      const idx = folders.indexOf(oldName);
+      if (idx !== -1) folders[idx] = newName;
+      folders = Array.from(new Set(folders));
+      saveFolders();
+
+      data.items.forEach((item) => {
+        if (item.folder === oldName) item.folder = newName;
+      });
+      if (currentFilter === oldName) currentFilter = newName;
+
+      await saveToGist();
+      render();
+    });
+  });
 
   const mediaList = document.getElementById('mediaList');
   const photoCount = data.items.filter((i) => (i.media || []).includes('photo')).length;
@@ -677,15 +806,19 @@ function renderCards() {
         <div class="card-body">
           <div class="card-text">${escapeHtml(item.text || '(내용 없음)')}</div>
           ${mediaHtml ? `<div>${mediaHtml}</div>` : ''}
+          ${item.linkStatus === 'missing' ? `<div><span class="missing-badge">⚠ 원본 삭제/비공개된 것 같아요</span></div>` : ''}
           <div class="card-meta">
             <span class="handle-date">@${item.handle || '?'} · ${dateTime}</span>
-            ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener">원문 보기 ↗</a>` : ''}
+            <span style="display:flex; align-items:center; gap:8px;">
+              <button class="link-check-btn" title="원본 링크 상태 확인">🔗 확인</button>
+              ${item.url ? `<a href="${item.url}" target="_blank" rel="noopener">원문 보기 ↗</a>` : ''}
+            </span>
           </div>
           ${showForm
             ? `
             <div class="card-form">
               <div class="card-form-row">
-                <select class="folder-select">${folderOptionsHtml(item.folder, item.handle)}</select>
+                <select class="folder-select">${folderOptionsHtml(item.folder, item.source !== 'manual' ? item.handle : null)}</select>
                 <input type="text" class="tag-input" placeholder="태그 (쉼표로 구분)" value="${tagInputValue}" />
               </div>
               <div class="card-form-actions">
@@ -718,6 +851,14 @@ function renderCards() {
       await saveToGist();
       render();
     });
+
+    const linkCheckBtn = cardEl.querySelector('.link-check-btn');
+    if (linkCheckBtn) {
+      linkCheckBtn.addEventListener('click', async () => {
+        linkCheckBtn.textContent = '확인중...';
+        await checkSingleCardLink(data.items[idx]);
+      });
+    }
 
     const editBtn = cardEl.querySelector('.edit-btn');
     if (editBtn) editBtn.addEventListener('click', () => { editingIds.add(id); renderCards(); });
@@ -756,6 +897,7 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
   requireUnlock(() => openSetupModal(fetchAndRenderFromGist));
 });
 document.getElementById('autoTagBtn').addEventListener('click', openAutoTagRulesModal);
+document.getElementById('checkLinksBtn').addEventListener('click', checkAllLinks);
 document.getElementById('refreshBtn').addEventListener('click', () => requireUnlock(fetchAndRenderFromGist));
 document.getElementById('lockBtn').addEventListener('click', () => {
   settings = null;

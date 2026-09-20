@@ -1,6 +1,41 @@
 // inject.js는 이제 manifest.json에 의해 MAIN 월드 콘텐츠 스크립트로 직접 실행되므로
 // 여기서 별도로 <script> 태그를 삽입할 필요가 없다.
 
+// 이미 아카이브된 트윗 id 캐시 (새로고침해도 체크 표시가 유지되도록)
+let archivedIdSet = new Set();
+
+function loadArchivedIds() {
+  chrome.runtime.sendMessage({ action: "getArchivedIds" }, (response) => {
+    if (response?.ok) {
+      archivedIdSet = new Set(response.ids);
+      // 캐시가 로드된 뒤 이미 그려져 있던 버튼들 상태도 갱신
+      refreshAllButtonStates();
+    }
+  });
+}
+loadArchivedIds();
+
+function refreshAllButtonStates() {
+  document.querySelectorAll('[data-archiver-btn="true"]').forEach((btn) => {
+    const id = btn.dataset.tweetId;
+    if (!id) return;
+    setButtonState(btn, archivedIdSet.has(id));
+  });
+}
+
+function setButtonState(btn, saved) {
+  btn.dataset.saved = saved ? "true" : "false";
+  if (saved) {
+    btn.textContent = "✓";
+    btn.style.color = "rgb(0,150,90)";
+    btn.title = "아카이브됨 (다시 누르면 취소)";
+  } else {
+    btn.textContent = "＋";
+    btn.style.color = "rgb(83,100,113)";
+    btn.title = "트윗 아카이버에 추가";
+  }
+}
+
 // inject.js가 postMessage로 보낸 캡처 데이터를 받아서 background로 전달
 window.addEventListener("message", (event) => {
   if (event.source !== window) return;
@@ -8,6 +43,9 @@ window.addEventListener("message", (event) => {
   chrome.runtime.sendMessage({ action: "saveTweet", payload: event.data.payload }, (response) => {
     if (!response?.ok) {
       console.warn("[트윗 아카이버] 자동 캡처 저장 실패:", response?.error);
+    } else {
+      archivedIdSet.add(event.data.payload.id);
+      refreshAllButtonStates();
     }
   });
 });
@@ -20,14 +58,18 @@ function addManualButtons() {
     const actionBar = article.querySelector('[role="group"]');
     if (!actionBar) return;
 
+    const id = extractTweetId(article);
+    if (!id) return; // 아직 링크를 못 읽어왔으면 다음 관찰 주기에 재시도
+
     article.dataset.archiverInjected = "true";
 
     const btn = document.createElement("span");
-    btn.textContent = "＋";
-    btn.title = "트윗 아카이버에 추가";
-    btn.dataset.saved = "false";
+    btn.dataset.archiverBtn = "true";
+    btn.dataset.tweetId = id;
     btn.style.cssText =
-      "cursor:pointer;padding:0 10px;color:rgb(83,100,113);font-size:16px;font-weight:bold;user-select:none;";
+      "cursor:pointer;padding:0 10px;font-size:16px;font-weight:bold;user-select:none;";
+
+    setButtonState(btn, archivedIdSet.has(id)); // 캐시에 있으면 처음부터 ✓로 표시
 
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -48,10 +90,8 @@ function addManualButtons() {
             btn.title = "취소 실패: " + (response?.error || "확장 프로그램을 새로고침 해보세요");
             return;
           }
-          btn.textContent = "＋";
-          btn.style.color = "rgb(83,100,113)";
-          btn.dataset.saved = "false";
-          btn.title = "트윗 아카이버에 추가";
+          archivedIdSet.delete(payload.id);
+          setButtonState(btn, false);
         });
         return;
       }
@@ -68,12 +108,9 @@ function addManualButtons() {
         }
 
         if (response?.ok) {
-          btn.textContent = "✓";
-          btn.style.color = "rgb(0,150,90)";
-          btn.dataset.saved = "true";
-          btn.title = response.skipped
-            ? "이미 아카이브에 저장된 트윗입니다 (다시 누르면 취소)"
-            : "아카이브됨 (다시 누르면 취소)";
+          archivedIdSet.add(payload.id);
+          setButtonState(btn, true);
+          if (response.skipped) btn.title = "이미 아카이브에 저장된 트윗입니다 (다시 누르면 취소)";
         } else {
           btn.textContent = "!";
           btn.style.color = "rgb(200,50,50)";
@@ -85,6 +122,16 @@ function addManualButtons() {
 
     actionBar.appendChild(btn);
   });
+}
+
+function extractTweetId(article) {
+  const timeEl = article.querySelector("time");
+  const permalinkAnchor = timeEl ? timeEl.closest('a[href*="/status/"]') : null;
+  const fallbackAnchor = article.querySelector('a[href*="/status/"]');
+  const anchor = permalinkAnchor || fallbackAnchor;
+  const href = anchor ? anchor.getAttribute("href") : null;
+  const match = href ? href.match(/^\/([^/]+)\/status\/(\d+)/) : null;
+  return match ? match[2] : null;
 }
 
 function buildManualPayload(article) {
