@@ -129,6 +129,8 @@
   .card-text { font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; color: var(--ink); word-break: break-word; }
   .media-chip { display: inline-block; font-size: 11px; font-weight: 700; background: var(--panel); color: var(--purple); padding: 3px 10px; border-radius: 999px; margin-right: 4px; }
   .missing-badge { display: inline-block; font-size: 10.5px; font-weight: 800; background: #f6d9d5; color: var(--danger); padding: 3px 9px; border-radius: 999px; }
+  .private-badge { display: inline-block; font-size: 10.5px; font-weight: 800; background: var(--panel); color: var(--purple); padding: 3px 9px; border-radius: 999px; }
+  .unknown-badge { display: inline-block; font-size: 10.5px; font-weight: 700; background: #ece7e2; color: var(--ink-soft); padding: 3px 9px; border-radius: 999px; }
   .link-check-btn { background: none; border: none; cursor: pointer; font-size: 11px; color: var(--ink-soft); font-weight: 700; }
   .link-check-btn:hover { color: var(--purple); }
 
@@ -602,11 +604,15 @@ function mediaBadges(media) {
   return labels.map((l) => `<span class="media-chip">${l}</span>`).join(' ');
 }
 
-/* ---------- 원본 트윗 삭제/비공개 여부 확인 (트위터 공개 oEmbed API, 로그인 불필요) ---------- */
+/* ---------- 원본 트윗 삭제/비공개 여부 확인 (트위터 공개 oEmbed API, 로그인 불필요) ----------
+   404 = 진짜로 삭제됨 (트윗 자체가 없음)
+   401/403 = 존재는 하지만 비공개 계정이라 공개 API로는 확인 불가 (삭제된 건 아님!)
+   그 외 = 네트워크 오류 등으로 확인 실패 (다시 시도 필요) */
 async function checkLinkStatus(url) {
   try {
     const res = await fetch(`https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&omit_script=true`);
     if (res.status === 404) return 'missing';
+    if (res.status === 401 || res.status === 403) return 'private';
     if (res.ok) return 'ok';
     return 'unknown';
   } catch (e) {
@@ -629,16 +635,23 @@ async function checkAllLinks() {
   if (!confirm(`저장된 트윗 ${targets.length}개의 원본 링크 상태를 확인할까요? 개수가 많으면 시간이 좀 걸려요.`)) return;
 
   let missingCount = 0;
+  let privateCount = 0;
+  let unknownCount = 0;
   for (const item of targets) {
     const status = await checkLinkStatus(item.url);
     item.linkStatus = status;
     item.linkCheckedAt = new Date().toISOString();
     if (status === 'missing') missingCount++;
+    else if (status === 'private') privateCount++;
+    else if (status === 'unknown') unknownCount++;
     await new Promise((r) => setTimeout(r, 350)); // API에 너무 빠르게 연타하지 않도록 살짝 대기
   }
   await saveToGist();
   render();
-  alert(`확인 완료! 삭제/비공개로 보이는 트윗 ${missingCount}개 발견했어요.`);
+  alert(
+    `확인 완료!\n삭제된 것으로 보이는 트윗: ${missingCount}개\n비공개 계정이라 확인 불가: ${privateCount}개` +
+    (unknownCount > 0 ? `\n확인 실패(네트워크 오류 등): ${unknownCount}개 — 나중에 다시 시도해보세요` : '')
+  );
 }
 
 function formatDateTime(iso) {
@@ -862,7 +875,9 @@ function renderCards() {
         <div class="card-top">
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0;">
             <span class="card-tag ${label.cls}">${label.icon} ${label.text}</span>
-            ${item.linkStatus === 'missing' ? `<span class="missing-badge">삭제/비공개</span>` : ''}
+            ${item.linkStatus === 'missing' ? `<span class="missing-badge">삭제</span>` : ''}
+            ${item.linkStatus === 'private' ? `<span class="private-badge">비공개</span>` : ''}
+            ${item.linkStatus === 'unknown' ? `<span class="unknown-badge">확인불가</span>` : ''}
           </div>
           <div style="display:flex; align-items:center; gap:12px; flex-shrink:0;">
             <button class="link-check-btn" title="원본 링크 상태 확인">🔗 확인</button>
