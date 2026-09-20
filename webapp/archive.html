@@ -86,6 +86,11 @@
     font-size: 11.5px; font-weight: 700; color: var(--pink-deep); flex-shrink: 0;
     background: rgba(255,255,255,0.5); padding: 1px 8px; border-radius: 999px;
   }
+  .folder-group-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-soft); padding: 12px 16px 4px; border-top: 1px dashed var(--line); margin-top: 6px;
+  }
+  .folder-group-label:first-of-type { border-top: none; margin-top: 0; }
   .add-folder-row { display: flex; padding: 10px 10px 0; gap: 6px; }
   .add-folder-row input {
     flex: 1; background: var(--white); border: 1.5px dashed var(--line);
@@ -174,6 +179,21 @@
   .tag-chip-clickable { cursor: pointer; }
   .tag-chip-clickable:hover { background: var(--subscriber); color: #fff; }
 
+  .tag-section-title { font-size: 12px; font-weight: 800; color: var(--purple); margin: 20px 0 10px; letter-spacing: 0.03em; }
+  .tag-section-title:first-child { margin-top: 0; }
+  .tag-chip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 6px; }
+  .tag-chip-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    background: var(--white); border: 1.5px dashed var(--line); border-radius: 12px; padding: 7px 10px;
+  }
+  .tag-chip-row .tag-chip-main { display: flex; align-items: center; gap: 6px; cursor: pointer; overflow: hidden; min-width: 0; }
+  .tag-chip-row .tag-chip-main:hover .tag-chip-name { color: var(--pink-deep); }
+  .tag-chip-name { font-size: 12px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag-chip-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .tag-chip-actions button { background: none; border: none; cursor: pointer; font-size: 10.5px; font-weight: 700; color: var(--ink-soft); }
+  .tag-chip-actions button:hover { color: var(--purple); }
+  .tag-chip-actions button.danger:hover { color: var(--danger); }
+
   .empty-state { color: var(--ink-soft); font-size: 13px; font-weight: 600; padding: 60px 0; text-align: center; }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(68,58,82,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
@@ -193,7 +213,7 @@
 <div class="topbar">
   <div class="brand">
     <div class="icon">🎀</div>
-    <h1>Tweet Archive</h1>
+    <h1 id="titleHome" style="cursor:pointer;">Tweet Archive</h1>
   </div>
   <div class="topbar-actions">
     <button id="cardsViewBtn" class="view-tab-btn">🗂 카드</button>
@@ -233,7 +253,7 @@
       <div class="search-row">
         <input type="text" id="tagSearchInput" placeholder="태그 검색..." />
       </div>
-      <div id="tagsManageGrid" class="cards-grid"></div>
+      <div id="tagsManageGrid"></div>
       <div class="empty-state" id="tagsEmptyState" style="display:none;">아직 달린 태그가 없어요.</div>
     </div>
   </div>
@@ -256,14 +276,14 @@ function saveFolders() {
   localStorage.setItem('tweetArchiverFolders', JSON.stringify(folders));
 }
 
-/* ---------- 서랍 별명 (실제 폴더 값=아이디는 그대로 두고, 화면 표시용 별명만 매핑) ---------- */
-const FOLDER_NICKNAMES_KEY = 'tweetArchiverFolderNicknames';
-
+/* ---------- 서랍 별명 (실제 폴더 값=아이디는 그대로 두고, 화면 표시용 별명만 매핑) ----------
+   기기/브라우저가 바뀌어도 유지되도록 로컬저장소가 아니라 Gist(data.folderNicknames)에 저장한다. */
 function getFolderNicknames() {
-  return JSON.parse(localStorage.getItem(FOLDER_NICKNAMES_KEY) || '{}');
+  if (!data.folderNicknames || typeof data.folderNicknames !== 'object') data.folderNicknames = {};
+  return data.folderNicknames;
 }
 function saveFolderNicknames(map) {
-  localStorage.setItem(FOLDER_NICKNAMES_KEY, JSON.stringify(map));
+  data.folderNicknames = map; // 실제 Gist 반영은 호출부에서 saveToGist()로 처리
 }
 function folderDisplayName(folder) {
   const nicknames = getFolderNicknames();
@@ -775,15 +795,29 @@ function renderFolderList() {
       <span class="tab-label">✦ 미분류</span><span class="count">${unclassifiedCount}</span>
     </div>
   `;
-  folders.forEach((f) => {
+
+  const folderTabHtml = (f) => {
     const count = data.items.filter((i) => i.folder === f).length;
     const displayName = folderDisplayName(f);
-    html += `
+    return `
       <div class="folder-tab ${currentFilter === f ? 'active' : ''}" data-filter="${f}" title="${displayName} (${f})">
         <span class="tab-label">🎀 ${displayName}</span><span class="count">${count}</span>
       </div>
     `;
-  });
+  };
+
+  // 자동캡처(본인트윗/인용) 트윗이 하나라도 있는 서랍 = 내 계정, 나머지 = 기타
+  const myAccountFolders = folders.filter((f) => data.items.some((i) => i.folder === f && i.source !== 'manual'));
+  const otherFolders = folders.filter((f) => !myAccountFolders.includes(f));
+
+  if (myAccountFolders.length > 0) {
+    html += `<div class="folder-group-label">내 계정</div>`;
+    html += myAccountFolders.map(folderTabHtml).join('');
+  }
+  if (otherFolders.length > 0) {
+    html += `<div class="folder-group-label">기타 서랍</div>`;
+    html += otherFolders.map(folderTabHtml).join('');
+  }
   list.innerHTML = html;
 
   const mediaList = document.getElementById('mediaList');
@@ -791,10 +825,10 @@ function renderFolderList() {
   const videoCount = data.items.filter((i) => (i.media || []).some((m) => m === 'video' || m === 'animated_gif')).length;
   mediaList.innerHTML = `
     <div class="folder-tab ${currentFilter === 'media:photo' ? 'active' : ''}" data-filter="media:photo">
-      <span class="tab-label">🖼 이미지만</span><span class="count">${photoCount}</span>
+      <span class="tab-label">🖼 이미지</span><span class="count">${photoCount}</span>
     </div>
     <div class="folder-tab ${currentFilter === 'media:video' ? 'active' : ''}" data-filter="media:video">
-      <span class="tab-label">🎬 동영상만</span><span class="count">${videoCount}</span>
+      <span class="tab-label">🎬 동영상</span><span class="count">${videoCount}</span>
     </div>
   `;
 
@@ -817,6 +851,7 @@ async function renameFolder(folderKey) {
     nicknames[folderKey] = newName;
   }
   saveFolderNicknames(nicknames);
+  await saveToGist();
   render();
 }
 
@@ -934,13 +969,16 @@ function renderTagsView() {
   const grid = document.getElementById('tagsManageGrid');
   const emptyState = document.getElementById('tagsEmptyState');
   const tagCounts = getTagCounts();
-  let tagNames = Object.keys(tagCounts).sort((a, b) => a.localeCompare(b, 'ko'));
+  let allTagNames = Object.keys(tagCounts);
 
   if (tagSearchTerm) {
-    tagNames = tagNames.filter((t) => t.toLowerCase().includes(tagSearchTerm.toLowerCase()));
+    allTagNames = allTagNames.filter((t) => t.toLowerCase().includes(tagSearchTerm.toLowerCase()));
   }
 
-  if (tagNames.length === 0) {
+  const mentionTags = allTagNames.filter((t) => t.startsWith('@')).sort((a, b) => a.localeCompare(b, 'ko'));
+  const hashTags = allTagNames.filter((t) => !t.startsWith('@')).sort((a, b) => a.localeCompare(b, 'ko'));
+
+  if (mentionTags.length === 0 && hashTags.length === 0) {
     grid.innerHTML = '';
     emptyState.style.display = 'block';
     emptyState.textContent = tagSearchTerm ? '검색 결과가 없어요.' : '아직 달린 태그가 없어요.';
@@ -948,25 +986,33 @@ function renderTagsView() {
   }
   emptyState.style.display = 'none';
 
-  grid.innerHTML = tagNames.map((t) => `
-    <div class="card" style="padding:16px;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-        <div style="font-size:15px; font-weight:800; color:var(--purple); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-          ${t.startsWith('@') ? t : '#' + t}
-        </div>
-        <span class="count" style="flex-shrink:0;">${tagCounts[t]}</span>
+  const rowHtml = (t) => `
+    <div class="tag-chip-row">
+      <div class="tag-chip-main" data-tag="${t}">
+        <span class="tag-chip-name">${t.startsWith('@') ? t : '#' + t}</span>
+        <span class="count">${tagCounts[t]}</span>
       </div>
-      <div style="display:flex; gap:10px; margin-top:14px; border-top:1.5px dashed var(--line); padding-top:12px;">
-        <button class="tag-filter-btn" data-tag="${t}" style="flex:1; background:var(--subscriber); color:#fff; border:none; border-radius:999px; padding:8px 0; font-size:12px; font-weight:800; cursor:pointer;">이 태그로 보기</button>
-        <button class="tag-rename-btn" data-tag="${t}" style="background:none; border:1.5px solid var(--line); color:var(--purple); border-radius:999px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;">이름변경</button>
-        <button class="tag-delete-btn" data-tag="${t}" style="background:none; border:1.5px solid var(--line); color:var(--danger); border-radius:999px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;">삭제</button>
+      <div class="tag-chip-actions">
+        <button class="tag-rename-btn" data-tag="${t}">수정</button>
+        <button class="tag-delete-btn danger" data-tag="${t}">삭제</button>
       </div>
     </div>
-  `).join('');
+  `;
 
-  grid.querySelectorAll('.tag-filter-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      currentFilter = `tag:${btn.dataset.tag}`;
+  let html = '';
+  if (hashTags.length > 0) {
+    html += `<div class="tag-section-title"># 태그 (${hashTags.length})</div>`;
+    html += `<div class="tag-chip-grid">${hashTags.map(rowHtml).join('')}</div>`;
+  }
+  if (mentionTags.length > 0) {
+    html += `<div class="tag-section-title">@ 멘션 (${mentionTags.length})</div>`;
+    html += `<div class="tag-chip-grid">${mentionTags.map(rowHtml).join('')}</div>`;
+  }
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('.tag-chip-main').forEach((el) => {
+    el.addEventListener('click', () => {
+      currentFilter = `tag:${el.dataset.tag}`;
       mainView = 'cards';
       render();
     });
@@ -1071,7 +1117,12 @@ function renderCards() {
     const isArchived = !!item.folder;
     const isEditing = editingIds.has(item.id);
     const dateTime = formatDateTime(item.createdAt);
-    const tagsHtml = (item.tags || []).map((t) =>
+    const sortedTags = [...(item.tags || [])].sort((a, b) => {
+      const aM = a.startsWith('@'), bM = b.startsWith('@');
+      if (aM === bM) return 0;
+      return aM ? -1 : 1; // 멘션(@)을 먼저
+    });
+    const tagsHtml = sortedTags.map((t) =>
       `<span class="tag-chip tag-chip-clickable" data-tag="${t}">${t.startsWith('@') ? t : '#' + t}</span>`
     ).join(' ');
     const mediaHtml = mediaBadges(item.media);
@@ -1201,6 +1252,7 @@ function render() {
 document.getElementById('settingsBtn').addEventListener('click', () => {
   requireUnlock(() => openSetupModal(fetchAndRenderFromGist));
 });
+document.getElementById('titleHome').addEventListener('click', () => { currentFilter = 'all'; searchTerm = ''; document.getElementById('searchInput').value = ''; mainView = 'cards'; render(); });
 document.getElementById('cardsViewBtn').addEventListener('click', () => { mainView = 'cards'; render(); });
 document.getElementById('tagsViewBtn').addEventListener('click', () => { mainView = 'tags'; render(); });
 document.getElementById('tagSearchInput').addEventListener('input', (e) => { tagSearchTerm = e.target.value; renderTagsView(); });
