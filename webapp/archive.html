@@ -241,6 +241,20 @@ function saveFolders() {
   localStorage.setItem('tweetArchiverFolders', JSON.stringify(folders));
 }
 
+/* ---------- 서랍 별명 (실제 폴더 값=아이디는 그대로 두고, 화면 표시용 별명만 매핑) ---------- */
+const FOLDER_NICKNAMES_KEY = 'tweetArchiverFolderNicknames';
+
+function getFolderNicknames() {
+  return JSON.parse(localStorage.getItem(FOLDER_NICKNAMES_KEY) || '{}');
+}
+function saveFolderNicknames(map) {
+  localStorage.setItem(FOLDER_NICKNAMES_KEY, JSON.stringify(map));
+}
+function folderDisplayName(folder) {
+  const nicknames = getFolderNicknames();
+  return nicknames[folder] || folder;
+}
+
 /* ---------- 자동 태그 규칙 ---------- */
 const AUTO_TAG_KEY = 'tweetArchiverAutoTagRules';
 
@@ -676,9 +690,10 @@ function renderFolderList() {
   `;
   folders.forEach((f) => {
     const count = data.items.filter((i) => i.folder === f).length;
+    const displayName = folderDisplayName(f);
     html += `
-      <div class="folder-tab ${currentFilter === f ? 'active' : ''}" data-filter="${f}" title="${f}">
-        <span class="tab-label">🎀 ${f}</span><span class="count">${count}</span>
+      <div class="folder-tab ${currentFilter === f ? 'active' : ''}" data-filter="${f}" title="${displayName} (${f})">
+        <span class="tab-label">🎀 ${displayName}</span><span class="count">${count}</span>
       </div>
     `;
   });
@@ -703,37 +718,70 @@ function renderFolderList() {
   renderTagList();
 }
 
-async function renameFolder(oldName) {
-  const newNameRaw = prompt('새 폴더 이름을 입력하세요', oldName);
+async function renameFolder(folderKey) {
+  const nicknames = getFolderNicknames();
+  const current = nicknames[folderKey] || folderKey;
+  const newNameRaw = prompt(`"${folderKey}" 서랍에 표시할 별명을 입력하세요\n(실제 분류 기준인 아이디 값은 바뀌지 않아요)`, current);
   if (newNameRaw === null) return;
   const newName = newNameRaw.trim();
-  if (!newName || newName === oldName) return;
+  if (!newName) return;
 
-  const idx = folders.indexOf(oldName);
-  if (idx !== -1) folders[idx] = newName;
-  folders = Array.from(new Set(folders));
+  if (newName === folderKey) {
+    delete nicknames[folderKey]; // 원래 아이디랑 같으면 별명 매핑 자체를 지움
+  } else {
+    nicknames[folderKey] = newName;
+  }
+  saveFolderNicknames(nicknames);
+  render();
+}
+
+async function deleteFolder(folderKey) {
+  const displayName = folderDisplayName(folderKey);
+  const count = data.items.filter((i) => i.folder === folderKey).length;
+  if (!confirm(`"${displayName}" 서랍을 삭제할까요? 여기 들어있던 트윗 ${count}개는 미분류로 돌아가요. (트윗 자체는 삭제되지 않습니다)`)) return;
+
+  folders = folders.filter((f) => f !== folderKey);
   saveFolders();
 
+  const nicknames = getFolderNicknames();
+  delete nicknames[folderKey];
+  saveFolderNicknames(nicknames);
+
   data.items.forEach((item) => {
-    if (item.folder === oldName) item.folder = newName;
+    if (item.folder === folderKey) item.folder = null;
   });
-  if (currentFilter === oldName) currentFilter = newName;
+  if (currentFilter === folderKey) currentFilter = 'all';
 
   await saveToGist();
   render();
 }
 
-async function deleteFolder(name) {
-  const count = data.items.filter((i) => i.folder === name).length;
-  if (!confirm(`"${name}" 서랍을 삭제할까요? 여기 들어있던 트윗 ${count}개는 미분류로 돌아가요. (트윗 자체는 삭제되지 않습니다)`)) return;
+async function mergeFolderInto(sourceKey) {
+  const others = folders.filter((f) => f !== sourceKey);
+  if (others.length === 0) { alert('합칠 대상이 될 다른 서랍이 없어요.'); return; }
 
-  folders = folders.filter((f) => f !== name);
-  saveFolders();
+  const hintList = others.map((f) => `${f}${folderDisplayName(f) !== f ? ' (별명: ' + folderDisplayName(f) + ')' : ''}`).join('\n');
+  const targetKey = prompt(
+    `"${folderDisplayName(sourceKey)}"를 어느 서랍으로 합칠까요?\n아래 목록에서 아이디(맨 앞부분)를 정확히 입력하세요:\n\n${hintList}`,
+    ''
+  );
+  if (!targetKey || !targetKey.trim()) return;
+  const target = targetKey.trim();
+  if (!others.includes(target)) { alert('목록에 있는 서랍 아이디를 정확히 입력해주세요.'); return; }
+
+  const nicknames = getFolderNicknames();
+  if (nicknames[sourceKey] && !nicknames[target]) {
+    nicknames[target] = nicknames[sourceKey];
+  }
+  delete nicknames[sourceKey];
+  saveFolderNicknames(nicknames);
 
   data.items.forEach((item) => {
-    if (item.folder === name) item.folder = null;
+    if (item.folder === sourceKey) item.folder = target;
   });
-  if (currentFilter === name) currentFilter = 'all';
+  folders = folders.filter((f) => f !== sourceKey);
+  saveFolders();
+  if (currentFilter === sourceKey) currentFilter = target;
 
   await saveToGist();
   render();
@@ -745,7 +793,7 @@ function openFolderManageModal() {
   overlay.innerHTML = `
     <div class="modal">
       <h3>🗂 서랍 관리</h3>
-      <div class="hint">이름을 바꾸거나 필요없는 서랍을 삭제할 수 있어요. 삭제해도 트윗 자체는 남고 미분류로 돌아가요.</div>
+      <div class="hint">"별명 수정"은 화면에 보이는 이름만 바꿔요 (실제 분류 기준인 아이디는 그대로 유지되어서, 새로 들어오는 트윗도 계속 같은 서랍으로 잘 모여요). "병합"은 서랍 두 개를 하나로 합쳐요 — 예전에 직접 이름을 바꿔서 중복 생긴 서랍 정리할 때 쓰세요. 삭제해도 트윗 자체는 남고 미분류로 돌아가요.</div>
       <div id="folderManageListInModal" style="margin-top:14px; max-height:280px; overflow-y:auto;"></div>
     </div>
   `;
@@ -760,11 +808,14 @@ function openFolderManageModal() {
     }
     listEl.innerHTML = folders.map((f) => {
       const count = data.items.filter((i) => i.folder === f).length;
+      const displayName = folderDisplayName(f);
+      const sub = displayName !== f ? ` <span style="color:var(--ink-soft); font-weight:500;">(${f})</span>` : '';
       return `
         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px dashed var(--line);">
-          <div style="font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${f} <span style="color:var(--ink-soft); font-weight:500;">(${count})</span></div>
+          <div style="font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${displayName}${sub} <span style="color:var(--ink-soft); font-weight:500;">· ${count}개</span></div>
           <div style="display:flex; gap:10px; flex-shrink:0;">
-            <button class="folder-rename-in-modal" data-folder="${f}" style="background:none;border:none;color:var(--purple);cursor:pointer;font-size:12px;font-weight:700;">수정</button>
+            <button class="folder-rename-in-modal" data-folder="${f}" style="background:none;border:none;color:var(--purple);cursor:pointer;font-size:12px;font-weight:700;">별명 수정</button>
+            <button class="folder-merge-in-modal" data-folder="${f}" style="background:none;border:none;color:var(--brass);cursor:pointer;font-size:12px;font-weight:700;">병합</button>
             <button class="folder-delete-in-modal" data-folder="${f}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;font-weight:700;">삭제</button>
           </div>
         </div>
@@ -773,6 +824,9 @@ function openFolderManageModal() {
 
     listEl.querySelectorAll('.folder-rename-in-modal').forEach((btn) => {
       btn.addEventListener('click', async () => { await renameFolder(btn.dataset.folder); renderList(); });
+    });
+    listEl.querySelectorAll('.folder-merge-in-modal').forEach((btn) => {
+      btn.addEventListener('click', async () => { await mergeFolderInto(btn.dataset.folder); renderList(); });
     });
     listEl.querySelectorAll('.folder-delete-in-modal').forEach((btn) => {
       btn.addEventListener('click', async () => { await deleteFolder(btn.dataset.folder); renderList(); });
@@ -814,7 +868,7 @@ function folderOptionsHtml(selected, suggestedHandle) {
   const effectiveSelected = selected || suggestedHandle || '';
   let html = `<option value="">폴더 선택</option>`;
   optionSet.forEach((f) => {
-    html += `<option value="${f}" ${effectiveSelected === f ? 'selected' : ''}>${f}</option>`;
+    html += `<option value="${f}" ${effectiveSelected === f ? 'selected' : ''}>${folderDisplayName(f)}</option>`;
   });
   return html;
 }
@@ -906,7 +960,7 @@ function renderCards() {
             : `
             <div class="archived-row">
               <div class="archived-row-top">
-                <div class="archived-badge">🎀 ${item.folder}</div>
+                <div class="archived-badge">🎀 ${folderDisplayName(item.folder)}</div>
                 <button class="text-edit-btn edit-btn">수정</button>
               </div>
               ${tagsHtml ? `<div>${tagsHtml}</div>` : ''}
