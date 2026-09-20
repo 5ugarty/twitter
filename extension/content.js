@@ -1,11 +1,45 @@
 // inject.js는 이제 manifest.json에 의해 MAIN 월드 콘텐츠 스크립트로 직접 실행되므로
 // 여기서 별도로 <script> 태그를 삽입할 필요가 없다.
 
+// 확장 프로그램이 리로드된 뒤 이 탭을 새로고침하지 않으면 chrome.runtime 연결이 끊겨서
+// "Cannot read properties of undefined (reading 'sendMessage')" 에러가 나는데,
+// 이걸 안전하게 감지해서 사용자에게 알아볼 수 있는 안내로 바꿔준다.
+let contextInvalidWarned = false;
+function safeSendMessage(message, callback) {
+  if (!chrome.runtime || !chrome.runtime.id) {
+    if (!contextInvalidWarned) {
+      contextInvalidWarned = true;
+      console.warn("[트윗 아카이버] 확장 프로그램 연결이 끊겼어요. 이 탭을 새로고침(또는 닫았다 다시 열기) 해주세요.");
+    }
+    if (callback) callback(null);
+    return;
+  }
+  try {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        if (!contextInvalidWarned) {
+          contextInvalidWarned = true;
+          console.warn("[트윗 아카이버] 확장 프로그램 연결이 끊겼어요:", chrome.runtime.lastError.message);
+        }
+        if (callback) callback(null);
+        return;
+      }
+      if (callback) callback(response);
+    });
+  } catch (e) {
+    if (!contextInvalidWarned) {
+      contextInvalidWarned = true;
+      console.warn("[트윗 아카이버] 확장 프로그램 연결이 끊겼어요. 이 탭을 새로고침(또는 닫았다 다시 열기) 해주세요.", e);
+    }
+    if (callback) callback(null);
+  }
+}
+
 // 이미 아카이브된 트윗 id 캐시 (새로고침해도 체크 표시가 유지되도록)
 let archivedIdSet = new Set();
 
 function loadArchivedIds() {
-  chrome.runtime.sendMessage({ action: "getArchivedIds" }, (response) => {
+  safeSendMessage({ action: "getArchivedIds" }, (response) => {
     if (response?.ok) {
       archivedIdSet = new Set(response.ids);
       // 캐시가 로드된 뒤 이미 그려져 있던 버튼들 상태도 갱신
@@ -40,7 +74,7 @@ function setButtonState(btn, saved) {
 window.addEventListener("message", (event) => {
   if (event.source !== window) return;
   if (event.data?.type !== "TWEET_ARCHIVER_CAPTURED") return;
-  chrome.runtime.sendMessage({ action: "saveTweet", payload: event.data.payload }, (response) => {
+  safeSendMessage({ action: "saveTweet", payload: event.data.payload }, (response) => {
     if (!response?.ok) {
       console.warn("[트윗 아카이버] 자동 캡처 저장 실패:", response?.error);
     } else {
@@ -83,11 +117,18 @@ function addManualButtons() {
 
       if (btn.dataset.saved === "true") {
         btn.textContent = "…";
-        chrome.runtime.sendMessage({ action: "deleteTweet", id: payload.id }, (response) => {
-          if (chrome.runtime.lastError || !response?.ok) {
+        safeSendMessage({ action: "deleteTweet", id: payload.id }, (response) => {
+          if (!response) {
             btn.textContent = "!";
             btn.style.color = "rgb(200,50,50)";
-            btn.title = "취소 실패: " + (response?.error || "확장 프로그램을 새로고침 해보세요");
+            btn.title = "확장 프로그램 연결이 끊겼어요. 이 탭을 새로고침(또는 닫았다 다시 열기) 해주세요.";
+            alert("확장 프로그램이 업데이트되어 연결이 끊겼어요. 이 탭을 새로고침(또는 닫았다 다시 열기) 해주세요.");
+            return;
+          }
+          if (!response.ok) {
+            btn.textContent = "!";
+            btn.style.color = "rgb(200,50,50)";
+            btn.title = "취소 실패: " + (response.error || "확장 프로그램을 새로고침 해보세요");
             return;
           }
           archivedIdSet.delete(payload.id);
@@ -99,15 +140,16 @@ function addManualButtons() {
       btn.textContent = "…";
       btn.style.color = "rgb(83,100,113)";
 
-      chrome.runtime.sendMessage({ action: "saveTweet", payload }, (response) => {
-        if (chrome.runtime.lastError) {
+      safeSendMessage({ action: "saveTweet", payload }, (response) => {
+        if (!response) {
           btn.textContent = "!";
           btn.style.color = "rgb(200,50,50)";
-          btn.title = "저장 실패: 페이지를 새로고침한 뒤 다시 시도해주세요";
+          btn.title = "확장 프로그램 연결이 끊겼어요. 이 탭을 새로고침(또는 닫았다 다시 열기) 해주세요.";
+          alert("확장 프로그램이 업데이트되어 연결이 끊겼어요. 이 탭을 새로고침(또는 닫았다 다시 열기) 해주세요.");
           return;
         }
 
-        if (response?.ok) {
+        if (response.ok) {
           archivedIdSet.add(payload.id);
           setButtonState(btn, true);
           if (response.skipped) btn.title = "이미 아카이브에 저장된 트윗입니다 (다시 누르면 취소)";
