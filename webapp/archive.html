@@ -55,6 +55,8 @@
     box-shadow: 0 2px 0 var(--line);
   }
   .topbar-actions button:hover { border-color: var(--pink-deep); color: var(--pink-deep); }
+  .view-tab-btn.active { background: var(--subscriber); color: #fff; border-color: transparent; }
+  .view-tab-btn.active:hover { color: #fff; }
 
   .layout { display: grid; grid-template-columns: 270px 1fr; min-height: calc(100vh - 78px); }
 
@@ -168,6 +170,8 @@
   .text-edit-btn { background: none; border: none; cursor: pointer; font-size: 11.5px; font-weight: 800; color: var(--purple); flex-shrink: 0; }
   .text-edit-btn:hover { text-decoration: underline; }
   .tag-chip { display: inline-block; background: var(--panel); color: var(--purple); border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 700; margin-right: 4px; }
+  .tag-chip-clickable { cursor: pointer; }
+  .tag-chip-clickable:hover { background: var(--subscriber); color: #fff; }
 
   .empty-state { color: var(--ink-soft); font-size: 13px; font-weight: 600; padding: 60px 0; text-align: center; }
 
@@ -191,6 +195,8 @@
     <h1>Tweet Archive</h1>
   </div>
   <div class="topbar-actions">
+    <button id="cardsViewBtn" class="view-tab-btn">🗂 카드</button>
+    <button id="tagsViewBtn" class="view-tab-btn">🏷 태그</button>
     <button id="refreshBtn">↻ 새로고침</button>
     <button id="settingsBtn">⚙ 설정</button>
     <button id="autoTagBtn" title="특정 단어가 포함되면 자동으로 태그를 붙이는 규칙">🏷 자동태그</button>
@@ -210,18 +216,25 @@
 
     <h2>미디어</h2>
     <div id="mediaList"></div>
-
-    <h2>태그</h2>
-    <div id="tagList" class="tag-list-scroll"></div>
   </div>
 
   <div class="main">
-    <div class="search-row">
-      <input type="text" id="searchInput" placeholder="트윗 내용 검색... (모든 폴더 대상)" />
+    <div id="cardsView">
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="트윗 내용 검색... (모든 폴더 대상)" />
+      </div>
+      <div class="search-hint" id="searchHint">🔍 검색 중에는 모든 서랍을 통틀어 찾습니다</div>
+      <div class="cards-grid" id="cardsGrid"></div>
+      <div class="empty-state" id="emptyState" style="display:none;"></div>
     </div>
-    <div class="search-hint" id="searchHint">🔍 검색 중에는 모든 서랍을 통틀어 찾습니다</div>
-    <div class="cards-grid" id="cardsGrid"></div>
-    <div class="empty-state" id="emptyState" style="display:none;"></div>
+
+    <div id="tagsView" style="display:none;">
+      <div class="search-row">
+        <input type="text" id="tagSearchInput" placeholder="태그 검색..." />
+      </div>
+      <div id="tagsManageGrid" class="cards-grid"></div>
+      <div class="empty-state" id="tagsEmptyState" style="display:none;">아직 달린 태그가 없어요.</div>
+    </div>
   </div>
 </div>
 
@@ -234,6 +247,7 @@ let settings = null; // 메모리에만 존재 (복호화 성공 후에만 채�
 let data = { items: [] };
 let folders = JSON.parse(localStorage.getItem('tweetArchiverFolders') || '[]');
 let currentFilter = 'all';
+let mainView = 'cards'; // 'cards' | 'tags'
 let searchTerm = '';
 let editingIds = new Set();
 
@@ -276,6 +290,37 @@ function computeAutoTags(text) {
     }
   });
   return Array.from(new Set(matched));
+}
+
+// 본문에 있는 실제 @멘션만 정확히 추출해서 태그로 제안 (트위터 핸들 문자 규칙: 영숫자/언더스코어, 최대 15자)
+// 단어 중간의 @(이메일 등)는 제외하기 위해 @ 앞이 단어문자가 아니거나 문장 시작인 경우만 매칭
+function computeMentionTags(text) {
+  if (!text) return [];
+  const re = /(?:^|[^\w@])@(\w{1,15})/g;
+  const found = new Set();
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    found.add('@' + match[1]);
+  }
+  return Array.from(found);
+}
+
+// 새로 들어온 트윗(자동/수동추가 무관)에 자동태그 규칙 + 멘션 태그를 계산해서 바로 저장까지 해버림.
+// 한 번 처리된 항목은 autoTagsApplied 플래그로 표시해서, 나중에 사용자가 태그를 직접 지워도
+// 다시 자동으로 채워넣지 않는다.
+function autoApplyTagsToNewItems() {
+  let changed = false;
+  data.items.forEach((item) => {
+    if (item.autoTagsApplied) return;
+    const suggested = Array.from(new Set([...computeAutoTags(item.text), ...computeMentionTags(item.text)]));
+    if (suggested.length > 0) {
+      const existing = item.tags || [];
+      item.tags = Array.from(new Set([...existing, ...suggested]));
+    }
+    item.autoTagsApplied = true;
+    changed = true;
+  });
+  return changed;
 }
 
 function openAutoTagRulesModal() {
@@ -392,10 +437,10 @@ function openAutoTagRulesModal() {
   });
 
   document.getElementById('reapplyRulesLink').addEventListener('click', async () => {
-    if (!confirm('저장된 모든 트윗을 지금 등록된 규칙으로 다시 검사해서 일치하는 태그를 추가할까요?')) return;
+    if (!confirm('저장된 모든 트윗을 지금 등록된 규칙(+멘션 자동태그)으로 다시 검사해서 일치하는 태그를 추가할까요?')) return;
     let changedCount = 0;
     data.items.forEach((item) => {
-      const auto = computeAutoTags(item.text);
+      const auto = [...computeAutoTags(item.text), ...computeMentionTags(item.text)];
       const existing = item.tags || [];
       const merged = Array.from(new Set([...existing, ...auto]));
       if (merged.length !== existing.length) {
@@ -587,10 +632,51 @@ async function fetchAndRenderFromGist() {
     });
     saveFolders();
 
+    const foldersChanged = reconcileFolders();
+    const tagsChanged = autoApplyTagsToNewItems();
+    if (foldersChanged || tagsChanged) await saveToGist();
+
     render();
   } catch (err) {
     alert('불러오기 실패: ' + err.message);
   }
+}
+
+// 핸들 형태(예: KIS2M3T)의 짧은 폴더값이 다른 폴더 이름 안에 부분 문자열로 포함되어 있으면
+// (예: "새벽 : KIS2M3T") 자동으로 짧은 쪽을 기준(canonical) 키로 흡수 병합한다.
+// 매 로딩마다 실행되므로 중복 서랍이 계속 새로 생기는 걸 막아준다.
+function reconcileFolders() {
+  const HANDLE_PATTERN = /^[A-Za-z0-9_]{1,20}$/;
+  let changed = false;
+  let keys = Array.from(new Set(data.items.map((i) => i.folder).filter(Boolean)));
+
+  let mergedSomething = true;
+  while (mergedSomething) {
+    mergedSomething = false;
+    outer:
+    for (let i = 0; i < keys.length; i++) {
+      for (let j = 0; j < keys.length; j++) {
+        if (i === j) continue;
+        const a = keys[i], b = keys[j];
+        if (a === b || !HANDLE_PATTERN.test(a) || a.length >= b.length) continue;
+        if (b.toLowerCase().includes(a.toLowerCase())) {
+          const nicknames = getFolderNicknames();
+          if (!nicknames[a]) nicknames[a] = b;
+          saveFolderNicknames(nicknames);
+
+          data.items.forEach((item) => { if (item.folder === b) item.folder = a; });
+          keys = Array.from(new Set(data.items.map((it) => it.folder).filter(Boolean)));
+          changed = true;
+          mergedSomething = true;
+          break outer;
+        }
+      }
+    }
+  }
+
+  folders = keys;
+  saveFolders();
+  return changed;
 }
 
 async function saveToGist() {
@@ -712,10 +798,8 @@ function renderFolderList() {
   `;
 
   document.querySelectorAll('.folder-tab').forEach((el) => {
-    el.addEventListener('click', () => { currentFilter = el.dataset.filter; render(); });
+    el.addEventListener('click', () => { currentFilter = el.dataset.filter; mainView = 'cards'; render(); });
   });
-
-  renderTagList();
 }
 
 async function renameFolder(folderKey) {
@@ -835,31 +919,93 @@ function openFolderManageModal() {
   renderList();
 }
 
-function renderTagList() {
-  const tagList = document.getElementById('tagList');
+let tagSearchTerm = '';
+
+function getTagCounts() {
   const tagCounts = {};
   data.items.forEach((i) => {
     (i.tags || []).forEach((t) => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
   });
-  const tagNames = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a]);
+  return tagCounts;
+}
 
-  if (tagNames.length === 0) {
-    tagList.innerHTML = `<div style="padding:6px 10px;font-size:11.5px;color:var(--ink-soft);">태그를 달면 여기 표시돼요</div>`;
-    return;
+function renderTagsView() {
+  const grid = document.getElementById('tagsManageGrid');
+  const emptyState = document.getElementById('tagsEmptyState');
+  const tagCounts = getTagCounts();
+  let tagNames = Object.keys(tagCounts).sort((a, b) => a.localeCompare(b, 'ko'));
+
+  if (tagSearchTerm) {
+    tagNames = tagNames.filter((t) => t.toLowerCase().includes(tagSearchTerm.toLowerCase()));
   }
 
-  tagList.innerHTML = tagNames.map((t) => {
-    const filterKey = `tag:${t}`;
-    return `
-      <div class="folder-tab ${currentFilter === filterKey ? 'active' : ''}" data-filter="${filterKey}" title="${t}">
-        <span class="tab-label"># ${t}</span><span class="count">${tagCounts[t]}</span>
-      </div>
-    `;
-  }).join('');
+  if (tagNames.length === 0) {
+    grid.innerHTML = '';
+    emptyState.style.display = 'block';
+    emptyState.textContent = tagSearchTerm ? '검색 결과가 없어요.' : '아직 달린 태그가 없어요.';
+    return;
+  }
+  emptyState.style.display = 'none';
 
-  tagList.querySelectorAll('.folder-tab').forEach((el) => {
-    el.addEventListener('click', () => { currentFilter = el.dataset.filter; render(); });
+  grid.innerHTML = tagNames.map((t) => `
+    <div class="card" style="padding:16px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div style="font-size:15px; font-weight:800; color:var(--purple); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          ${t.startsWith('@') ? t : '#' + t}
+        </div>
+        <span class="count" style="flex-shrink:0;">${tagCounts[t]}</span>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:14px; border-top:1.5px dashed var(--line); padding-top:12px;">
+        <button class="tag-filter-btn" data-tag="${t}" style="flex:1; background:var(--subscriber); color:#fff; border:none; border-radius:999px; padding:8px 0; font-size:12px; font-weight:800; cursor:pointer;">이 태그로 보기</button>
+        <button class="tag-rename-btn" data-tag="${t}" style="background:none; border:1.5px solid var(--line); color:var(--purple); border-radius:999px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;">이름변경</button>
+        <button class="tag-delete-btn" data-tag="${t}" style="background:none; border:1.5px solid var(--line); color:var(--danger); border-radius:999px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;">삭제</button>
+      </div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.tag-filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentFilter = `tag:${btn.dataset.tag}`;
+      mainView = 'cards';
+      render();
+    });
   });
+  grid.querySelectorAll('.tag-rename-btn').forEach((btn) => {
+    btn.addEventListener('click', () => renameTagGlobally(btn.dataset.tag));
+  });
+  grid.querySelectorAll('.tag-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteTagGlobally(btn.dataset.tag));
+  });
+}
+
+async function renameTagGlobally(oldTag) {
+  const newTagRaw = prompt('새 태그 이름을 입력하세요', oldTag);
+  if (newTagRaw === null) return;
+  const newTag = newTagRaw.trim();
+  if (!newTag || newTag === oldTag) return;
+
+  data.items.forEach((item) => {
+    if (item.tags && item.tags.includes(oldTag)) {
+      item.tags = Array.from(new Set(item.tags.map((t) => (t === oldTag ? newTag : t))));
+    }
+  });
+  if (currentFilter === `tag:${oldTag}`) currentFilter = `tag:${newTag}`;
+
+  await saveToGist();
+  render();
+}
+
+async function deleteTagGlobally(tag) {
+  const count = data.items.filter((i) => (i.tags || []).includes(tag)).length;
+  if (!confirm(`"${tag}" 태그를 트윗 ${count}개에서 전부 지울까요?`)) return;
+
+  data.items.forEach((item) => {
+    if (item.tags) item.tags = item.tags.filter((t) => t !== tag);
+  });
+  if (currentFilter === `tag:${tag}`) currentFilter = 'all';
+
+  await saveToGist();
+  render();
 }
 
 function folderOptionsHtml(selected, suggestedHandle) {
@@ -916,12 +1062,16 @@ function renderCards() {
     const isArchived = !!item.folder;
     const isEditing = editingIds.has(item.id);
     const dateTime = formatDateTime(item.createdAt);
-    const tagsHtml = (item.tags || []).map((t) => `<span class="tag-chip">#${t}</span>`).join(' ');
+    const tagsHtml = (item.tags || []).map((t) =>
+      `<span class="tag-chip tag-chip-clickable" data-tag="${t}">${t.startsWith('@') ? t : '#' + t}</span>`
+    ).join(' ');
     const mediaHtml = mediaBadges(item.media);
     const showForm = !isArchived || isEditing;
 
     const existingTags = item.tags || [];
-    const autoSuggested = showForm ? computeAutoTags(item.text).filter((t) => !existingTags.includes(t)) : [];
+    const autoSuggested = showForm
+      ? Array.from(new Set([...computeAutoTags(item.text), ...computeMentionTags(item.text)])).filter((t) => !existingTags.includes(t))
+      : [];
     const tagInputValue = [...existingTags, ...autoSuggested].join(', ');
 
     return `
@@ -975,6 +1125,15 @@ function renderCards() {
     const idx = Number(cardEl.dataset.idx);
     const id = cardEl.dataset.id;
 
+    cardEl.querySelectorAll('.tag-chip-clickable').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        currentFilter = `tag:${chip.dataset.tag}`;
+        searchTerm = '';
+        document.getElementById('searchInput').value = '';
+        render();
+      });
+    });
+
     cardEl.querySelector('.delete-btn').addEventListener('click', async () => {
       if (!confirm('이 트윗을 아카이브에서 완전히 삭제할까요? (원본 트윗은 삭제되지 않습니다)')) return;
       data.items.splice(idx, 1);
@@ -1020,13 +1179,22 @@ function renderCards() {
 }
 
 function render() {
+  document.getElementById('cardsView').style.display = mainView === 'cards' ? '' : 'none';
+  document.getElementById('tagsView').style.display = mainView === 'tags' ? '' : 'none';
+  document.getElementById('cardsViewBtn').classList.toggle('active', mainView === 'cards');
+  document.getElementById('tagsViewBtn').classList.toggle('active', mainView === 'tags');
+
   renderFolderList();
-  renderCards();
+  if (mainView === 'cards') renderCards();
+  else renderTagsView();
 }
 
 document.getElementById('settingsBtn').addEventListener('click', () => {
   requireUnlock(() => openSetupModal(fetchAndRenderFromGist));
 });
+document.getElementById('cardsViewBtn').addEventListener('click', () => { mainView = 'cards'; render(); });
+document.getElementById('tagsViewBtn').addEventListener('click', () => { mainView = 'tags'; render(); });
+document.getElementById('tagSearchInput').addEventListener('input', (e) => { tagSearchTerm = e.target.value; renderTagsView(); });
 document.getElementById('autoTagBtn').addEventListener('click', openAutoTagRulesModal);
 document.getElementById('folderManageLink').addEventListener('click', openFolderManageModal);
 document.getElementById('checkLinksBtn').addEventListener('click', checkAllLinks);
