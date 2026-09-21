@@ -26,6 +26,7 @@
     --purple: #6f5a92;
     --line: #e3cdec;
     --danger: #c2564f;
+    --mention: #5f8fb0;
   }
 
   * { box-sizing: border-box; min-width: 0; }
@@ -55,6 +56,13 @@
     box-shadow: 0 2px 0 var(--line);
   }
   .topbar-actions button:hover { border-color: var(--pink-deep); color: var(--pink-deep); }
+  .corner-actions { position: fixed; bottom: 18px; left: 18px; display: flex; gap: 8px; z-index: 50; }
+  .corner-actions button {
+    width: 42px; height: 42px; border-radius: 50%; border: 1.5px solid var(--line);
+    background: var(--white); color: var(--purple); font-size: 16px; cursor: pointer;
+    box-shadow: 0 3px 0 var(--line);
+  }
+  .corner-actions button:hover { border-color: var(--pink-deep); color: var(--pink-deep); }
   .view-tab-btn.active { background: var(--subscriber); color: #fff; border-color: transparent; }
   .view-tab-btn.active:hover { color: #fff; }
 
@@ -82,7 +90,7 @@
   .folder-tab:hover { background: var(--panel); }
   .folder-tab.active { color: #fff; background: var(--subscriber); box-shadow: 0 3px 0 rgba(216,116,174,0.3); }
   .folder-tab.active .count { color: #fff; background: rgba(255,255,255,0.3); }
-  .folder-tab .count {
+  .count {
     font-size: 11.5px; font-weight: 700; color: var(--pink-deep); flex-shrink: 0;
     background: rgba(255,255,255,0.5); padding: 1px 8px; border-radius: 999px;
   }
@@ -108,11 +116,17 @@
     flex: 1; background: var(--white); border: 1.5px dashed var(--line);
     color: var(--ink); padding: 12px 18px; font-size: 14px; border-radius: 999px; font-family: inherit;
   }
+  .search-row input[type="date"] { flex: 0 0 170px; font-size: 13px; }
   .search-row input::placeholder { color: #c3aed1; }
   .search-hint { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; margin: 0 0 18px 6px; display: none; }
   .search-hint.active { display: block; }
 
   .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+  .date-section-header {
+    grid-column: 1 / -1; font-size: 12.5px; font-weight: 800; color: var(--purple);
+    padding: 16px 4px 2px; border-top: 1.5px dashed rgba(237,228,211,0.4); margin-top: 4px;
+  }
+  .date-section-header:first-child { border-top: none; margin-top: 0; padding-top: 0; }
 
   .card {
     background: var(--white); border-radius: 20px; border: 1.5px dashed var(--line);
@@ -135,6 +149,11 @@
   .card-body { padding: 10px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
   .card-text { font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; color: var(--ink); word-break: break-word; }
   .card-text a { color: var(--pink-deep); text-decoration: underline; }
+  .inline-mention-chip {
+    display: inline-block; background: var(--mention); color: #fff; border-radius: 999px;
+    padding: 1px 9px; font-size: 0.92em; font-weight: 700; cursor: pointer; margin: 0 1px;
+  }
+  .inline-mention-chip:hover { opacity: 0.85; }
   .media-chip { display: inline-block; font-size: 11px; font-weight: 700; background: var(--panel); color: var(--purple); padding: 3px 10px; border-radius: 999px; margin-right: 4px; }
   .missing-badge { display: inline-block; font-size: 10.5px; font-weight: 800; background: #f6d9d5; color: var(--danger); padding: 3px 9px; border-radius: 999px; }
   .private-badge { display: inline-block; font-size: 10.5px; font-weight: 800; background: var(--panel); color: var(--purple); padding: 3px 9px; border-radius: 999px; }
@@ -189,10 +208,13 @@
   .tag-chip-row .tag-chip-main { display: flex; align-items: center; gap: 6px; cursor: pointer; overflow: hidden; min-width: 0; }
   .tag-chip-row .tag-chip-main:hover .tag-chip-name { color: var(--pink-deep); }
   .tag-chip-name { font-size: 12px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag-chip-main.mention .tag-chip-name { color: var(--mention); }
+  .tag-chip-row .tag-chip-main.mention:hover .tag-chip-name { color: var(--mention); opacity: 0.8; }
   .tag-chip-actions { display: flex; gap: 8px; flex-shrink: 0; }
   .tag-chip-actions button { background: none; border: none; cursor: pointer; font-size: 10.5px; font-weight: 700; color: var(--ink-soft); }
   .tag-chip-actions button:hover { color: var(--purple); }
   .tag-chip-actions button.danger:hover { color: var(--danger); }
+  .tag-chip-row .count { background: var(--panel); }
 
   .empty-state { color: var(--ink-soft); font-size: 13px; font-weight: 600; padding: 60px 0; text-align: center; }
 
@@ -219,11 +241,14 @@
     <button id="cardsViewBtn" class="view-tab-btn">🗂 카드</button>
     <button id="tagsViewBtn" class="view-tab-btn">🏷 태그</button>
     <button id="refreshBtn">↻ 새로고침</button>
-    <button id="settingsBtn">⚙ 설정</button>
     <button id="autoTagBtn" title="특정 단어가 포함되면 자동으로 태그를 붙이는 규칙">🏷 자동태그</button>
     <button id="checkLinksBtn" title="원본 트윗이 삭제/비공개 되었는지 전체 확인">🔗 링크 확인</button>
-    <button id="lockBtn" title="이 탭에서만 즉시 잠그기">🔒 잠그기</button>
   </div>
+</div>
+
+<div class="corner-actions">
+  <button id="settingsBtn" title="설정">⚙</button>
+  <button id="lockBtn" title="이 탭에서만 즉시 잠그기">🔒</button>
 </div>
 
 <div class="layout">
@@ -243,6 +268,8 @@
     <div id="cardsView">
       <div class="search-row">
         <input type="text" id="searchInput" placeholder="트윗 내용 검색... (모든 폴더 대상)" />
+        <input type="date" id="dateFilterInput" title="날짜로 필터링" />
+        <button id="dateFilterClearBtn" title="날짜 필터 해제" style="display:none; flex-shrink:0; background:var(--white); border:1.5px solid var(--line); border-radius:999px; padding:0 14px; font-weight:700; color:var(--ink-soft); cursor:pointer;">✕ 날짜해제</button>
       </div>
       <div class="search-hint" id="searchHint">🔍 검색 중에는 모든 서랍을 통틀어 찾습니다</div>
       <div class="cards-grid" id="cardsGrid"></div>
@@ -252,6 +279,8 @@
     <div id="tagsView" style="display:none;">
       <div class="search-row">
         <input type="text" id="tagSearchInput" placeholder="태그 검색..." />
+        <input type="text" id="newTagGroupInput" placeholder="새 그룹 이름" style="max-width:160px;" />
+        <button id="addTagGroupBtn" style="background:var(--moderator); border:none; color:#6b4a63; border-radius:999px; padding:0 18px; font-weight:800; cursor:pointer;">+ 그룹</button>
       </div>
       <div id="tagsManageGrid"></div>
       <div class="empty-state" id="tagsEmptyState" style="display:none;">아직 달린 태그가 없어요.</div>
@@ -270,6 +299,7 @@ let folders = JSON.parse(localStorage.getItem('tweetArchiverFolders') || '[]');
 let currentFilter = 'all';
 let mainView = 'cards'; // 'cards' | 'tags'
 let searchTerm = '';
+let dateFilter = ''; // 'YYYY-MM-DD' or ''
 let editingIds = new Set();
 
 function saveFolders() {
@@ -288,6 +318,48 @@ function saveFolderNicknames(map) {
 function folderDisplayName(folder) {
   const nicknames = getFolderNicknames();
   return nicknames[folder] || folder;
+}
+
+/* ---------- 태그 그룹 (Gist에 저장, { 그룹명: [태그, ...] }) ---------- */
+function getTagGroups() {
+  if (!data.tagGroups || typeof data.tagGroups !== 'object') data.tagGroups = {};
+  return data.tagGroups;
+}
+function saveTagGroupsLocal(map) {
+  data.tagGroups = map;
+}
+function getTagGroupOf(tag) {
+  const groups = getTagGroups();
+  for (const g in groups) {
+    if (groups[g].includes(tag)) return g;
+  }
+  return null;
+}
+async function moveTagToGroup(tag, groupName) {
+  const groups = getTagGroups();
+  Object.keys(groups).forEach((g) => { groups[g] = groups[g].filter((t) => t !== tag); });
+  if (groupName) {
+    if (!groups[groupName]) groups[groupName] = [];
+    groups[groupName].push(tag);
+  }
+  saveTagGroupsLocal(groups);
+  await saveToGist();
+  render();
+}
+async function createTagGroup(name) {
+  const groups = getTagGroups();
+  if (!groups[name]) groups[name] = [];
+  saveTagGroupsLocal(groups);
+  await saveToGist();
+  render();
+}
+async function deleteTagGroup(name) {
+  if (!confirm(`"${name}" 그룹을 삭제할까요? 그룹에 속한 태그들은 미분류로 돌아가고, 태그 자체는 지워지지 않아요.`)) return;
+  const groups = getTagGroups();
+  delete groups[name];
+  saveTagGroupsLocal(groups);
+  await saveToGist();
+  render();
 }
 
 /* ---------- 자동 태그 규칙 ---------- */
@@ -783,6 +855,13 @@ function formatDateTime(iso) {
   return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function formatDateHeader(iso) {
+  if (!iso) return '날짜 없음';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '날짜 없음';
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+
 function renderFolderList() {
   const list = document.getElementById('folderList');
   const unclassifiedCount = data.items.filter((i) => !i.folder).length;
@@ -975,10 +1054,7 @@ function renderTagsView() {
     allTagNames = allTagNames.filter((t) => t.toLowerCase().includes(tagSearchTerm.toLowerCase()));
   }
 
-  const mentionTags = allTagNames.filter((t) => t.startsWith('@')).sort((a, b) => a.localeCompare(b, 'ko'));
-  const hashTags = allTagNames.filter((t) => !t.startsWith('@')).sort((a, b) => a.localeCompare(b, 'ko'));
-
-  if (mentionTags.length === 0 && hashTags.length === 0) {
+  if (allTagNames.length === 0) {
     grid.innerHTML = '';
     emptyState.style.display = 'block';
     emptyState.textContent = tagSearchTerm ? '검색 결과가 없어요.' : '아직 달린 태그가 없어요.';
@@ -988,26 +1064,45 @@ function renderTagsView() {
 
   const rowHtml = (t) => `
     <div class="tag-chip-row">
-      <div class="tag-chip-main" data-tag="${t}">
+      <div class="tag-chip-main ${t.startsWith('@') ? 'mention' : ''}" data-tag="${t}">
         <span class="tag-chip-name">${t.startsWith('@') ? t : '#' + t}</span>
         <span class="count">${tagCounts[t]}</span>
       </div>
       <div class="tag-chip-actions">
+        <button class="tag-group-move-btn" data-tag="${t}">그룹</button>
         <button class="tag-rename-btn" data-tag="${t}">수정</button>
         <button class="tag-delete-btn danger" data-tag="${t}">삭제</button>
       </div>
     </div>
   `;
 
+  const groups = getTagGroups();
+  const groupNames = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'ko'));
+  const groupedTagSet = new Set();
+  groupNames.forEach((g) => (groups[g] || []).forEach((t) => groupedTagSet.add(t)));
+  const ungrouped = allTagNames.filter((t) => !groupedTagSet.has(t)).sort((a, b) => a.localeCompare(b, 'ko'));
+
   let html = '';
-  if (hashTags.length > 0) {
-    html += `<div class="tag-section-title"># 태그 (${hashTags.length})</div>`;
-    html += `<div class="tag-chip-grid">${hashTags.map(rowHtml).join('')}</div>`;
+  groupNames.forEach((g) => {
+    const tagsInGroup = (groups[g] || [])
+      .filter((t) => allTagNames.includes(t))
+      .sort((a, b) => a.localeCompare(b, 'ko'));
+    html += `
+      <div class="tag-section-title">
+        📁 ${g} (${tagsInGroup.length})
+        <button class="tag-group-delete-btn" data-group="${g}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:11px;font-weight:700;margin-left:8px;">그룹삭제</button>
+      </div>
+    `;
+    html += tagsInGroup.length > 0
+      ? `<div class="tag-chip-grid">${tagsInGroup.map(rowHtml).join('')}</div>`
+      : `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">아직 이 그룹에 넣은 태그가 없어요.</div>`;
+  });
+
+  if (ungrouped.length > 0) {
+    html += `<div class="tag-section-title">미분류 (${ungrouped.length})</div>`;
+    html += `<div class="tag-chip-grid">${ungrouped.map(rowHtml).join('')}</div>`;
   }
-  if (mentionTags.length > 0) {
-    html += `<div class="tag-section-title">@ 멘션 (${mentionTags.length})</div>`;
-    html += `<div class="tag-chip-grid">${mentionTags.map(rowHtml).join('')}</div>`;
-  }
+
   grid.innerHTML = html;
 
   grid.querySelectorAll('.tag-chip-main').forEach((el) => {
@@ -1022,6 +1117,20 @@ function renderTagsView() {
   });
   grid.querySelectorAll('.tag-delete-btn').forEach((btn) => {
     btn.addEventListener('click', () => deleteTagGlobally(btn.dataset.tag));
+  });
+  grid.querySelectorAll('.tag-group-move-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tag = btn.dataset.tag;
+      const gNames = Object.keys(getTagGroups());
+      const current = getTagGroupOf(tag) || '';
+      const hint = gNames.length ? `기존 그룹: ${gNames.join(', ')}\n\n` : '';
+      const input = prompt(`${hint}"${tag}"를 넣을 그룹 이름을 입력하세요 (비우면 미분류로 이동)`, current);
+      if (input === null) return;
+      await moveTagToGroup(tag, input.trim() || null);
+    });
+  });
+  grid.querySelectorAll('.tag-group-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => deleteTagGroup(btn.dataset.group));
   });
 }
 
@@ -1080,6 +1189,13 @@ function linkifyText(escapedText) {
   );
 }
 
+// 본문 안 @멘션을 태그칩과 같은 모양(단, 다른 색)의 클릭 가능한 인라인 요소로 감싼다
+function mentionifyText(escapedText) {
+  return escapedText.replace(/(^|[^\w@])@(\w{1,15})/g, (full, pre, handle) => {
+    return `${pre}<span class="inline-mention-chip" data-tag="@${handle}">@${handle}</span>`;
+  });
+}
+
 function matchesCurrentFilter(item) {
   if (currentFilter === 'all') return true;
   if (currentFilter === 'unclassified') return !item.folder;
@@ -1103,15 +1219,24 @@ function renderCards() {
     items = data.items.filter(matchesCurrentFilter);
   }
 
+  if (dateFilter) {
+    items = items.filter((i) => {
+      const iso = i.createdAt || i.capturedAt;
+      return iso && iso.slice(0, 10) === dateFilter;
+    });
+  }
+
   if (items.length === 0) {
     grid.innerHTML = '';
     emptyState.style.display = 'block';
-    emptyState.textContent = searchTerm ? '검색 결과가 없어요.' : '이 목록에는 아직 트윗이 없어요.';
+    emptyState.textContent = (searchTerm || dateFilter) ? '검색 결과가 없어요.' : '이 목록에는 아직 트윗이 없어요.';
     return;
   }
   emptyState.style.display = 'none';
 
-  grid.innerHTML = items.map((item) => {
+  items = [...items].sort((a, b) => new Date(b.createdAt || b.capturedAt || 0) - new Date(a.createdAt || a.capturedAt || 0));
+
+  const cardHtml = (item) => {
     const realIdx = data.items.indexOf(item);
     const label = sourceLabel(item.source);
     const isArchived = !!item.folder;
@@ -1149,7 +1274,7 @@ function renderCards() {
           </div>
         </div>
         <div class="card-body">
-          <div class="card-text">${linkifyText(escapeHtml(item.text || '(내용 없음)'))}</div>
+          <div class="card-text">${linkifyText(mentionifyText(escapeHtml(item.text || '(내용 없음)')))}</div>
           ${mediaHtml ? `<div>${mediaHtml}</div>` : ''}
           <div class="card-meta">
             <span class="handle-date">@${item.handle || '?'} · ${dateTime}${item.url ? ` · <a href="${item.url}" target="_blank" rel="noopener">원문 보기 ↗</a>` : ''}</span>
@@ -1179,13 +1304,25 @@ function renderCards() {
         </div>
       </div>
     `;
-  }).join('');
+  };
+
+  let html = '';
+  let lastDateKey = null;
+  items.forEach((item) => {
+    const dateKey = formatDateHeader(item.createdAt || item.capturedAt);
+    if (dateKey !== lastDateKey) {
+      html += `<div class="date-section-header">📅 ${dateKey}</div>`;
+      lastDateKey = dateKey;
+    }
+    html += cardHtml(item);
+  });
+  grid.innerHTML = html;
 
   grid.querySelectorAll('.card').forEach((cardEl) => {
     const idx = Number(cardEl.dataset.idx);
     const id = cardEl.dataset.id;
 
-    cardEl.querySelectorAll('.tag-chip-clickable').forEach((chip) => {
+    cardEl.querySelectorAll('.tag-chip-clickable, .inline-mention-chip').forEach((chip) => {
       chip.addEventListener('click', () => {
         currentFilter = `tag:${chip.dataset.tag}`;
         searchTerm = '';
@@ -1256,6 +1393,13 @@ document.getElementById('titleHome').addEventListener('click', () => { currentFi
 document.getElementById('cardsViewBtn').addEventListener('click', () => { mainView = 'cards'; render(); });
 document.getElementById('tagsViewBtn').addEventListener('click', () => { mainView = 'tags'; render(); });
 document.getElementById('tagSearchInput').addEventListener('input', (e) => { tagSearchTerm = e.target.value; renderTagsView(); });
+document.getElementById('addTagGroupBtn').addEventListener('click', async () => {
+  const input = document.getElementById('newTagGroupInput');
+  const name = input.value.trim();
+  if (!name) return;
+  input.value = '';
+  await createTagGroup(name);
+});
 document.getElementById('autoTagBtn').addEventListener('click', openAutoTagRulesModal);
 document.getElementById('folderManageLink').addEventListener('click', openFolderManageModal);
 document.getElementById('checkLinksBtn').addEventListener('click', checkAllLinks);
@@ -1268,6 +1412,17 @@ document.getElementById('lockBtn').addEventListener('click', () => {
   requireUnlock(fetchAndRenderFromGist);
 });
 document.getElementById('searchInput').addEventListener('input', (e) => { searchTerm = e.target.value; renderCards(); });
+document.getElementById('dateFilterInput').addEventListener('change', (e) => {
+  dateFilter = e.target.value;
+  document.getElementById('dateFilterClearBtn').style.display = dateFilter ? 'block' : 'none';
+  renderCards();
+});
+document.getElementById('dateFilterClearBtn').addEventListener('click', () => {
+  dateFilter = '';
+  document.getElementById('dateFilterInput').value = '';
+  document.getElementById('dateFilterClearBtn').style.display = 'none';
+  renderCards();
+});
 document.getElementById('addFolderBtn').addEventListener('click', () => {
   const input = document.getElementById('newFolderInput');
   const name = input.value.trim();
