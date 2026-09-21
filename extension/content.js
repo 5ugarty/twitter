@@ -37,6 +37,7 @@ function safeSendMessage(message, callback) {
 
 // 이미 아카이브된 트윗 id 캐시 (새로고침해도 체크 표시가 유지되도록)
 let archivedIdSet = new Set();
+let myHandles = [];
 
 function loadArchivedIds() {
   safeSendMessage({ action: "getArchivedIds" }, (response) => {
@@ -49,6 +50,13 @@ function loadArchivedIds() {
 }
 loadArchivedIds();
 
+function loadMyHandles() {
+  safeSendMessage({ action: "getMyHandles" }, (response) => {
+    if (response?.ok) myHandles = response.handles || [];
+  });
+}
+loadMyHandles();
+
 function refreshAllButtonStates() {
   document.querySelectorAll('[data-archiver-btn="true"]').forEach((btn) => {
     const id = btn.dataset.tweetId;
@@ -57,11 +65,14 @@ function refreshAllButtonStates() {
   });
 }
 
+const CHECK_SVG =
+  '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12.5 9.5 18 20 5"></polyline></svg>';
+
 function setButtonState(btn, saved) {
   btn.dataset.saved = saved ? "true" : "false";
   if (saved) {
-    btn.textContent = "✓";
-    btn.style.color = "rgb(0,150,90)";
+    btn.innerHTML = CHECK_SVG;
+    btn.style.color = "rgb(124,90,180)"; // 보라색
     btn.title = "아카이브됨 (다시 누르면 취소)";
   } else {
     btn.textContent = "＋";
@@ -101,7 +112,7 @@ function addManualButtons() {
     btn.dataset.archiverBtn = "true";
     btn.dataset.tweetId = id;
     btn.style.cssText =
-      "cursor:pointer;padding:0 10px;font-size:16px;font-weight:bold;user-select:none;";
+      "cursor:pointer;padding:0 10px;font-size:16px;font-weight:bold;user-select:none;display:inline-flex;align-items:center;justify-content:center;";
 
     setButtonState(btn, archivedIdSet.has(id)); // 캐시에 있으면 처음부터 ✓로 표시
 
@@ -228,3 +239,103 @@ const observer = new MutationObserver(() => addManualButtons());
 observer.observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener("DOMContentLoaded", addManualButtons);
 addManualButtons();
+
+/* ---------- 화면에 로드된 내 트윗 일괄 가져오기 (폰 등 확장프로그램 없이 쓴 트윗 복구용) ---------- */
+
+function sendMessagePromise(message) {
+  return new Promise((resolve) => {
+    if (!chrome.runtime || !chrome.runtime.id) {
+      resolve(null);
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(response);
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+function createBulkImportButton() {
+  if (!document.body) return;
+  if (document.getElementById("archiverBulkImportBtn")) return;
+
+  const btn = document.createElement("button");
+  btn.id = "archiverBulkImportBtn";
+  btn.textContent = "📥 화면의 내 트윗 가져오기";
+  btn.style.cssText = [
+    "position:fixed", "right:20px", "bottom:20px", "z-index:9999",
+    "background:#d874ae", "color:#fff", "border:none", "border-radius:999px",
+    "padding:12px 18px", "font-size:13px", "font-weight:700", "cursor:pointer",
+    "box-shadow:0 4px 12px rgba(0,0,0,0.25)",
+  ].join(";");
+
+  btn.addEventListener("click", async () => {
+    if (!myHandles || myHandles.length === 0) {
+      alert('먼저 확장 프로그램 아이콘 → "내 계정 목록"에 계정을 등록해주세요.');
+      return;
+    }
+
+    const originalText = btn.textContent;
+    btn.disabled = true;
+
+    const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+    let found = 0;
+    let added = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (let i = 0; i < articles.length; i++) {
+      const article = articles[i];
+      const id = extractTweetId(article);
+      if (!id) continue;
+
+      const payload = buildManualPayload(article);
+      if (!payload || !myHandles.includes(payload.handle)) continue;
+
+      found++;
+      btn.textContent = `가져오는 중... (${found}개 확인, ${added}개 추가)`;
+
+      if (archivedIdSet.has(id)) {
+        skipped++;
+        continue;
+      }
+
+      payload.source = "own"; // 실제 본인 트윗이므로 자동트윗과 동일하게 분류되도록
+
+      const response = await sendMessagePromise({ action: "saveTweet", payload });
+      if (response?.ok) {
+        archivedIdSet.add(id);
+        if (!response.skipped) added++;
+        else skipped++;
+      } else {
+        failed++;
+      }
+
+      await new Promise((r) => setTimeout(r, 150)); // API 연타 방지
+    }
+
+    btn.disabled = false;
+    btn.textContent = originalText;
+    refreshAllButtonStates();
+
+    alert(
+      `화면에서 내 계정 트윗 ${found}개를 확인했어요.\n` +
+      `새로 추가: ${added}개\n` +
+      `이미 있었음: ${skipped}개` +
+      (failed > 0 ? `\n실패: ${failed}개 (설정을 확인해주세요)` : '') +
+      `\n\n더 가져오려면 타임라인을 스크롤해서 트윗을 더 불러온 뒤 다시 눌러주세요.`
+    );
+  });
+
+  document.body.appendChild(btn);
+}
+
+createBulkImportButton();
+setInterval(createBulkImportButton, 3000); // SPA 네비게이션으로 버튼이 사라지는 경우 대비

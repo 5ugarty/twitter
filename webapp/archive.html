@@ -362,14 +362,13 @@ async function deleteTagGroup(name) {
   render();
 }
 
-/* ---------- 자동 태그 규칙 ---------- */
-const AUTO_TAG_KEY = 'tweetArchiverAutoTagRules';
-
+/* ---------- 자동 태그 규칙 (기기/브라우저 바뀌어도 유지되도록 Gist에 저장) ---------- */
 function getAutoTagRules() {
-  return JSON.parse(localStorage.getItem(AUTO_TAG_KEY) || '[]'); // [{ tag, keywords: [] }]
+  if (!Array.isArray(data.autoTagRules)) data.autoTagRules = [];
+  return data.autoTagRules; // [{ tags: [], keywords: [] }]
 }
 function saveAutoTagRules(rules) {
-  localStorage.setItem(AUTO_TAG_KEY, JSON.stringify(rules));
+  data.autoTagRules = rules; // 실제 Gist 반영은 호출부에서 saveToGist()로 처리
 }
 function computeAutoTags(text) {
   if (!text) return [];
@@ -472,10 +471,11 @@ function openAutoTagRulesModal() {
     `).join('');
 
     list.querySelectorAll('.rule-delete-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const rules = getAutoTagRules();
         rules.splice(Number(btn.dataset.idx), 1);
         saveAutoTagRules(rules);
+        await saveToGist();
         if (editingIndex === Number(btn.dataset.idx)) exitEditMode();
         renderRuleList();
       });
@@ -509,8 +509,10 @@ function openAutoTagRulesModal() {
   renderRuleList();
   document.getElementById('ruleSearchInput').addEventListener('input', renderRuleList);
   document.getElementById('cancelEditBtn').addEventListener('click', exitEditMode);
+  enableCommaOnEnter(document.getElementById('newRuleTag'));
+  enableCommaOnEnter(document.getElementById('newRuleKeywords'));
 
-  document.getElementById('addRuleBtn').addEventListener('click', () => {
+  document.getElementById('addRuleBtn').addEventListener('click', async () => {
     const tagsRaw = document.getElementById('newRuleTag').value.trim();
     const keywordsRaw = document.getElementById('newRuleKeywords').value.trim();
     if (!tagsRaw || !keywordsRaw) { alert('태그 이름과 키워드를 모두 입력해주세요.'); return; }
@@ -524,6 +526,7 @@ function openAutoTagRulesModal() {
       rules.push({ tags, keywords });
     }
     saveAutoTagRules(rules);
+    await saveToGist();
 
     exitEditMode();
     renderRuleList();
@@ -1175,6 +1178,19 @@ function folderOptionsHtml(selected, suggestedHandle) {
   return html;
 }
 
+// 쉼표 입력이 번거로우니, Enter를 누르면 쉼표+공백을 자동으로 넣어주는 편의 기능
+// (완전한 칩 입력 UI는 아니지만 "단어 → Enter → 단어 → Enter"로 타이핑하기 훨씬 편해짐)
+function enableCommaOnEnter(input) {
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const v = input.value;
+    if (v && !/,\s*$/.test(v)) {
+      input.value = v.replace(/\s+$/, '') + ', ';
+    }
+  });
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -1317,6 +1333,8 @@ function renderCards() {
     html += cardHtml(item);
   });
   grid.innerHTML = html;
+
+  grid.querySelectorAll('.tag-input').forEach(enableCommaOnEnter);
 
   grid.querySelectorAll('.card').forEach((cardEl) => {
     const idx = Number(cardEl.dataset.idx);

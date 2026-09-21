@@ -24,6 +24,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
   }
+  if (message.action === "getMyHandles") {
+    getGistConfig()
+      .then((config) => sendResponse({ ok: true, handles: config.myHandles || [] }))
+      .catch((err) => sendResponse({ ok: false, error: String(err), handles: [] }));
+    return true;
+  }
+  if (message.action === "getGistConfig") {
+    getGistConfig()
+      .then((config) => sendResponse({ ok: true, config }))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
+  if (message.action === "saveGistConfig") {
+    saveGistConfig(message.config)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
 });
 
 /* ---------- 로컬 ID 캐시 (체크 표시를 새로고침해도 유지하기 위함) ---------- */
@@ -48,7 +66,7 @@ async function removeIdFromCache(id) {
 }
 
 async function refreshIdCacheFromGist() {
-  const { githubToken, gistId } = await getSettings();
+  const { githubToken, gistId } = await getCredentials();
   if (!githubToken || !gistId) {
     return { ok: false, error: "GitHub 토큰/Gist ID가 설정되지 않았습니다." };
   }
@@ -67,19 +85,39 @@ async function refreshIdCacheFromGist() {
 chrome.runtime.onStartup.addListener(() => { refreshIdCacheFromGist().catch(() => {}); });
 chrome.runtime.onInstalled.addListener(() => { refreshIdCacheFromGist().catch(() => {}); });
 
-async function getSettings() {
-  const { githubToken, gistId, myHandles, accountFolderRules } = await chrome.storage.sync.get([
-    "githubToken",
-    "gistId",
-    "myHandles",
-    "accountFolderRules",
-  ]);
+// 토큰/Gist ID만 이 브라우저 로컬(chrome.storage.sync)에 남는다.
+// (Gist 자체를 열기 위한 열쇠라서 Gist 안에 넣을 수 없음 - 그 외 설정은 전부 Gist에 저장됨)
+async function getCredentials() {
+  const { githubToken, gistId } = await chrome.storage.sync.get(["githubToken", "gistId"]);
+  return { githubToken, gistId };
+}
+
+// 내 계정 목록 / 계정별 폴더 매핑 등 나머지 설정은 Gist(data.config)에서 읽어온다.
+async function getGistConfig() {
+  const { githubToken, gistId } = await getCredentials();
+  if (!githubToken || !gistId) {
+    return { myHandles: [], accountFolderRules: [] };
+  }
+  const data = await fetchGistData(githubToken, gistId);
+  const config = data.config && typeof data.config === "object" ? data.config : {};
   return {
-    githubToken,
-    gistId,
-    myHandles: Array.isArray(myHandles) ? myHandles : [],
-    accountFolderRules: Array.isArray(accountFolderRules) ? accountFolderRules : [],
+    myHandles: Array.isArray(config.myHandles) ? config.myHandles : [],
+    accountFolderRules: Array.isArray(config.accountFolderRules) ? config.accountFolderRules : [],
   };
+}
+
+async function saveGistConfig(config) {
+  const { githubToken, gistId } = await getCredentials();
+  if (!githubToken || !gistId) {
+    return { ok: false, error: "GitHub 토큰/Gist ID가 설정되지 않았습니다." };
+  }
+  const data = await fetchGistData(githubToken, gistId);
+  data.config = {
+    myHandles: Array.isArray(config.myHandles) ? config.myHandles : [],
+    accountFolderRules: Array.isArray(config.accountFolderRules) ? config.accountFolderRules : [],
+  };
+  await writeGistData(githubToken, gistId, data);
+  return { ok: true };
 }
 
 // 폴더 자동 분류 우선순위:
@@ -140,7 +178,7 @@ async function writeGistData(githubToken, gistId, data) {
 }
 
 async function saveTweetToGist(tweetPayload) {
-  const { githubToken, gistId, myHandles, accountFolderRules } = await getSettings();
+  const { githubToken, gistId } = await getCredentials();
 
   if (!githubToken || !gistId) {
     const msg =
@@ -163,6 +201,9 @@ async function saveTweetToGist(tweetPayload) {
     return { ok: true, skipped: true };
   }
 
+  const config = data.config && typeof data.config === "object" ? data.config : {};
+  const myHandles = Array.isArray(config.myHandles) ? config.myHandles : [];
+  const accountFolderRules = Array.isArray(config.accountFolderRules) ? config.accountFolderRules : [];
   const autoFolder = resolveFolder(tweetPayload, myHandles, accountFolderRules);
 
   data.items.unshift({
@@ -184,7 +225,7 @@ async function saveTweetToGist(tweetPayload) {
 }
 
 async function deleteTweetFromGist(id) {
-  const { githubToken, gistId } = await getSettings();
+  const { githubToken, gistId } = await getCredentials();
 
   if (!githubToken || !gistId) {
     return { ok: false, error: "GitHub 토큰/Gist ID가 설정되지 않았습니다." };
