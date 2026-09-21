@@ -170,15 +170,14 @@
   .card-meta a:hover { text-decoration: underline; }
   .card-meta .handle-date { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .card-form { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1.5px dashed var(--line); padding-top: 12px; }
-  .card-form-row { display: flex; gap: 6px; width: 100%; }
+  .card-form { display: flex; flex-direction: column; gap: 8px; border-top: 1.5px dashed var(--line); padding-top: 12px; }
   .card-form-actions { display: flex; gap: 6px; width: 100%; }
-  .card-form select, .card-form input {
+  .card-form select {
     font-family: inherit; font-size: 12px; font-weight: 600; padding: 8px 10px;
     border: 1.5px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); min-width: 0;
+    width: 100%;
   }
-  .card-form select { flex: 0 0 42%; }
-  .card-form input { flex: 1; }
+  .card-form .chip-input-wrap { font-size: 12px; }
   .card-form button.save-btn {
     flex: 1; background: var(--pink-deep); color: #fff; border: none; border-radius: 999px;
     padding: 9px 0; font-size: 12.5px; font-weight: 800; cursor: pointer;
@@ -200,20 +199,35 @@
 
   .tag-section-title { font-size: 12px; font-weight: 800; color: var(--purple); margin: 20px 0 10px; letter-spacing: 0.03em; }
   .tag-section-title:first-child { margin-top: 0; }
-  .tag-chip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 6px; }
+  .tag-chip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-bottom: 6px; }
   .tag-chip-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px;
     background: var(--white); border: 1.5px dashed var(--line); border-radius: 12px; padding: 7px 10px;
   }
-  .tag-chip-row .tag-chip-main { display: flex; align-items: center; gap: 6px; cursor: pointer; overflow: hidden; min-width: 0; }
+  .tag-chip-row .tag-chip-main { display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 0; flex: 1 1 auto; }
   .tag-chip-row .tag-chip-main:hover .tag-chip-name { color: var(--pink-deep); }
-  .tag-chip-name { font-size: 12px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag-chip-name { font-size: 12px; font-weight: 700; color: var(--ink); white-space: normal; word-break: break-word; }
   .tag-chip-main.mention .tag-chip-name { color: var(--mention); }
   .tag-chip-row .tag-chip-main.mention:hover .tag-chip-name { color: var(--mention); opacity: 0.8; }
+  .tag-group-select {
+    font-family: inherit; font-size: 10.5px; font-weight: 700; color: var(--ink-soft);
+    border: 1px solid var(--line); border-radius: 999px; padding: 2px 6px; background: var(--panel);
+  }
   .tag-chip-actions { display: flex; gap: 8px; flex-shrink: 0; }
   .tag-chip-actions button { background: none; border: none; cursor: pointer; font-size: 10.5px; font-weight: 700; color: var(--ink-soft); }
   .tag-chip-actions button:hover { color: var(--purple); }
   .tag-chip-actions button.danger:hover { color: var(--danger); }
+
+  .chip-input-wrap {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    border: 1.5px solid var(--line); border-radius: 12px; padding: 6px 8px; background: var(--white);
+  }
+  .chip-input-tag {
+    display: inline-flex; align-items: center; gap: 4px; background: var(--panel); color: var(--purple);
+    border-radius: 999px; padding: 3px 6px 3px 10px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  }
+  .chip-input-remove { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 11px; font-weight: 800; padding: 0 2px; }
+  .chip-input-field { flex: 1; min-width: 80px; border: none; outline: none; font-size: 12.5px; font-family: inherit; padding: 3px 2px; }
   .tag-chip-row .count { background: var(--panel); }
 
   .empty-state { color: var(--ink-soft); font-size: 13px; font-weight: 600; padding: 60px 0; text-align: center; }
@@ -235,12 +249,11 @@
 <div class="topbar">
   <div class="brand">
     <div class="icon">🎀</div>
-    <h1 id="titleHome" style="cursor:pointer;">Tweet Archive</h1>
+    <h1 id="titleHome" style="cursor:pointer;" title="클릭하면 전체 보기로 이동하고 새로고침돼요">Tweet Archive</h1>
   </div>
   <div class="topbar-actions">
     <button id="cardsViewBtn" class="view-tab-btn">🗂 카드</button>
     <button id="tagsViewBtn" class="view-tab-btn">🏷 태그</button>
-    <button id="refreshBtn">↻ 새로고침</button>
     <button id="autoTagBtn" title="특정 단어가 포함되면 자동으로 태그를 붙이는 규칙">🏷 자동태그</button>
     <button id="checkLinksBtn" title="원본 트윗이 삭제/비공개 되었는지 전체 확인">🔗 링크 확인</button>
   </div>
@@ -426,10 +439,10 @@ function openAutoTagRulesModal() {
       <div class="hint">지정한 단어가 트윗 본문에 포함되어 있으면 저장할 때 해당 태그를 자동으로 제안해요. 예: 키워드 [거노, 건호, 고노] → 태그 "건호"</div>
       <input type="text" id="ruleSearchInput" placeholder="🔍 태그/키워드 검색" style="width:100%; box-sizing:border-box; padding:8px 12px; margin-top:12px; border:1.5px solid var(--line); border-radius:999px; font-size:12.5px; font-family:inherit;" />
       <div id="ruleListInModal" style="margin-top:10px; max-height:200px; overflow-y:auto;"></div>
-      <label id="ruleFormLabel">태그 이름 (쉼표로 여러 개 지정 가능)</label>
-      <input type="text" id="newRuleTag" placeholder="예: 건호, 상대역" />
-      <label>키워드 (쉼표로 구분)</label>
-      <input type="text" id="newRuleKeywords" placeholder="예: 거노, 건호, 고노" />
+      <label id="ruleFormLabel">태그 이름 (여러 개면 하나씩 입력 후 Enter)</label>
+      <div id="newRuleTagChips"></div>
+      <label style="margin-top:14px;">키워드 (하나씩 입력 후 Enter)</label>
+      <div id="newRuleKeywordChips"></div>
       <div style="display:flex; gap:6px; margin-top:18px;">
         <button class="primary" id="addRuleBtn" style="margin-top:0;">규칙 추가</button>
         <button id="cancelEditBtn" style="display:none; flex:0 0 70px; background:var(--panel); color:var(--ink-soft); border:1.5px solid var(--line); border-radius:999px; font-size:12px; font-weight:700; cursor:pointer;">취소</button>
@@ -487,37 +500,36 @@ function openAutoTagRulesModal() {
         const rules = getAutoTagRules();
         const rule = rules[idx];
         const ruleTags = rule.tags || (rule.tag ? [rule.tag] : []);
-        document.getElementById('newRuleTag').value = ruleTags.join(', ');
-        document.getElementById('newRuleKeywords').value = (rule.keywords || []).join(', ');
+        tagChipInput = buildChipInput(document.getElementById('newRuleTagChips'), ruleTags);
+        keywordChipInput = buildChipInput(document.getElementById('newRuleKeywordChips'), rule.keywords || []);
         editingIndex = idx;
         document.getElementById('addRuleBtn').textContent = '수정 완료';
         document.getElementById('cancelEditBtn').style.display = 'block';
-        document.getElementById('ruleFormLabel').textContent = '태그 이름 수정 중 (쉼표로 여러 개 지정 가능)';
+        document.getElementById('ruleFormLabel').textContent = '태그 이름 수정 중 (하나씩 입력 후 Enter)';
       });
     });
   }
 
+  let tagChipInput = buildChipInput(document.getElementById('newRuleTagChips'), []);
+  let keywordChipInput = buildChipInput(document.getElementById('newRuleKeywordChips'), []);
+
   function exitEditMode() {
     editingIndex = null;
-    document.getElementById('newRuleTag').value = '';
-    document.getElementById('newRuleKeywords').value = '';
+    tagChipInput = buildChipInput(document.getElementById('newRuleTagChips'), []);
+    keywordChipInput = buildChipInput(document.getElementById('newRuleKeywordChips'), []);
     document.getElementById('addRuleBtn').textContent = '규칙 추가';
     document.getElementById('cancelEditBtn').style.display = 'none';
-    document.getElementById('ruleFormLabel').textContent = '태그 이름 (쉼표로 여러 개 지정 가능)';
+    document.getElementById('ruleFormLabel').textContent = '태그 이름 (여러 개면 하나씩 입력 후 Enter)';
   }
 
   renderRuleList();
   document.getElementById('ruleSearchInput').addEventListener('input', renderRuleList);
   document.getElementById('cancelEditBtn').addEventListener('click', exitEditMode);
-  enableCommaOnEnter(document.getElementById('newRuleTag'));
-  enableCommaOnEnter(document.getElementById('newRuleKeywords'));
 
   document.getElementById('addRuleBtn').addEventListener('click', async () => {
-    const tagsRaw = document.getElementById('newRuleTag').value.trim();
-    const keywordsRaw = document.getElementById('newRuleKeywords').value.trim();
-    if (!tagsRaw || !keywordsRaw) { alert('태그 이름과 키워드를 모두 입력해주세요.'); return; }
-    const tags = tagsRaw.split(',').map((t) => t.trim()).filter(Boolean);
-    const keywords = keywordsRaw.split(',').map((k) => k.trim()).filter(Boolean);
+    const tags = tagChipInput.getTags();
+    const keywords = keywordChipInput.getTags();
+    if (tags.length === 0 || keywords.length === 0) { alert('태그 이름과 키워드를 하나 이상씩 입력해주세요.'); return; }
 
     const rules = getAutoTagRules();
     if (editingIndex !== null) {
@@ -1065,30 +1077,49 @@ function renderTagsView() {
   }
   emptyState.style.display = 'none';
 
-  const rowHtml = (t) => `
+  // @멘션은 사용자가 직접 그룹을 고를 필요 없이 항상 자동으로 "@Mention"으로 분리
+  const mentionTags = allTagNames.filter((t) => t.startsWith('@')).sort((a, b) => a.localeCompare(b, 'ko'));
+  const nonMentionTags = allTagNames.filter((t) => !t.startsWith('@'));
+
+  const groups = getTagGroups();
+  const groupNames = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'ko'));
+
+  const groupSelectHtml = (t) => {
+    const current = getTagGroupOf(t) || '';
+    let opts = `<option value="" ${current === '' ? 'selected' : ''}>미분류</option>`;
+    groupNames.forEach((g) => { opts += `<option value="${g}" ${current === g ? 'selected' : ''}>${g}</option>`; });
+    opts += `<option value="__new__">+ 새 그룹 만들기</option>`;
+    return `<select class="tag-group-select" data-tag="${t}">${opts}</select>`;
+  };
+
+  const rowHtml = (t, showGroupSelect) => `
     <div class="tag-chip-row">
       <div class="tag-chip-main ${t.startsWith('@') ? 'mention' : ''}" data-tag="${t}">
         <span class="tag-chip-name">${t.startsWith('@') ? t : '#' + t}</span>
         <span class="count">${tagCounts[t]}</span>
       </div>
       <div class="tag-chip-actions">
-        <button class="tag-group-move-btn" data-tag="${t}">그룹</button>
+        ${showGroupSelect ? groupSelectHtml(t) : ''}
         <button class="tag-rename-btn" data-tag="${t}">수정</button>
         <button class="tag-delete-btn danger" data-tag="${t}">삭제</button>
       </div>
     </div>
   `;
 
-  const groups = getTagGroups();
-  const groupNames = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'ko'));
   const groupedTagSet = new Set();
   groupNames.forEach((g) => (groups[g] || []).forEach((t) => groupedTagSet.add(t)));
-  const ungrouped = allTagNames.filter((t) => !groupedTagSet.has(t)).sort((a, b) => a.localeCompare(b, 'ko'));
+  const ungrouped = nonMentionTags.filter((t) => !groupedTagSet.has(t)).sort((a, b) => a.localeCompare(b, 'ko'));
 
   let html = '';
+
+  if (mentionTags.length > 0) {
+    html += `<div class="tag-section-title">@ Mention (${mentionTags.length})</div>`;
+    html += `<div class="tag-chip-grid">${mentionTags.map((t) => rowHtml(t, false)).join('')}</div>`;
+  }
+
   groupNames.forEach((g) => {
     const tagsInGroup = (groups[g] || [])
-      .filter((t) => allTagNames.includes(t))
+      .filter((t) => nonMentionTags.includes(t))
       .sort((a, b) => a.localeCompare(b, 'ko'));
     html += `
       <div class="tag-section-title">
@@ -1097,13 +1128,13 @@ function renderTagsView() {
       </div>
     `;
     html += tagsInGroup.length > 0
-      ? `<div class="tag-chip-grid">${tagsInGroup.map(rowHtml).join('')}</div>`
+      ? `<div class="tag-chip-grid">${tagsInGroup.map((t) => rowHtml(t, true)).join('')}</div>`
       : `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">아직 이 그룹에 넣은 태그가 없어요.</div>`;
   });
 
   if (ungrouped.length > 0) {
     html += `<div class="tag-section-title">미분류 (${ungrouped.length})</div>`;
-    html += `<div class="tag-chip-grid">${ungrouped.map(rowHtml).join('')}</div>`;
+    html += `<div class="tag-chip-grid">${ungrouped.map((t) => rowHtml(t, true)).join('')}</div>`;
   }
 
   grid.innerHTML = html;
@@ -1121,15 +1152,16 @@ function renderTagsView() {
   grid.querySelectorAll('.tag-delete-btn').forEach((btn) => {
     btn.addEventListener('click', () => deleteTagGlobally(btn.dataset.tag));
   });
-  grid.querySelectorAll('.tag-group-move-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const tag = btn.dataset.tag;
-      const gNames = Object.keys(getTagGroups());
-      const current = getTagGroupOf(tag) || '';
-      const hint = gNames.length ? `기존 그룹: ${gNames.join(', ')}\n\n` : '';
-      const input = prompt(`${hint}"${tag}"를 넣을 그룹 이름을 입력하세요 (비우면 미분류로 이동)`, current);
-      if (input === null) return;
-      await moveTagToGroup(tag, input.trim() || null);
+  grid.querySelectorAll('.tag-group-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const tag = sel.dataset.tag;
+      let value = sel.value;
+      if (value === '__new__') {
+        const name = prompt('새 그룹 이름을 입력하세요');
+        if (!name || !name.trim()) { renderTagsView(); return; }
+        value = name.trim();
+      }
+      await moveTagToGroup(tag, value || null);
     });
   });
   grid.querySelectorAll('.tag-group-delete-btn').forEach((btn) => {
@@ -1178,17 +1210,51 @@ function folderOptionsHtml(selected, suggestedHandle) {
   return html;
 }
 
-// 쉼표 입력이 번거로우니, Enter를 누르면 쉼표+공백을 자동으로 넣어주는 편의 기능
-// (완전한 칩 입력 UI는 아니지만 "단어 → Enter → 단어 → Enter"로 타이핑하기 훨씬 편해짐)
-function enableCommaOnEnter(input) {
-  input.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const v = input.value;
-    if (v && !/,\s*$/.test(v)) {
-      input.value = v.replace(/\s+$/, '') + ', ';
-    }
-  });
+// 진짜 칩(chip) 입력 컴포넌트. 쉼표는 전혀 쓰지 않고, Enter로만 태그를 추가한다.
+// containerEl 안에 이미 태그 칩들 + 텍스트 입력창을 그려 넣고, getTags()로 현재 값을 꺼낼 수 있다.
+function buildChipInput(containerEl, initialTags) {
+  let tags = [...(initialTags || [])];
+
+  function renderChips() {
+    containerEl.classList.add('chip-input-wrap');
+    containerEl.innerHTML =
+      tags.map((t, i) => `
+        <span class="chip-input-tag">
+          ${escapeHtml(t)}
+          <button type="button" class="chip-input-remove" data-idx="${i}">✕</button>
+        </span>
+      `).join('') +
+      `<input type="text" class="chip-input-field" placeholder="입력 후 Enter" />`;
+
+    const field = containerEl.querySelector('.chip-input-field');
+    field.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const v = field.value.trim();
+        if (v && !tags.includes(v)) {
+          tags.push(v);
+          renderChips();
+          containerEl.querySelector('.chip-input-field').focus();
+        } else {
+          field.value = '';
+        }
+      } else if (e.key === 'Backspace' && field.value === '' && tags.length > 0) {
+        tags.pop();
+        renderChips();
+        containerEl.querySelector('.chip-input-field').focus();
+      }
+    });
+
+    containerEl.querySelectorAll('.chip-input-remove').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        tags.splice(Number(btn.dataset.idx), 1);
+        renderChips();
+      });
+    });
+  }
+
+  renderChips();
+  return { getTags: () => tags };
 }
 
 function escapeHtml(str) {
@@ -1273,7 +1339,8 @@ function renderCards() {
     const autoSuggested = showForm
       ? Array.from(new Set([...computeAutoTags(item.text), ...computeMentionTags(item.text)])).filter((t) => !existingTags.includes(t))
       : [];
-    const tagInputValue = [...existingTags, ...autoSuggested].join(', ');
+    const initialChipTags = [...existingTags, ...autoSuggested];
+    const initialChipTagsAttr = escapeHtml(JSON.stringify(initialChipTags));
 
     return `
       <div class="card" data-idx="${realIdx}" data-id="${item.id}">
@@ -1298,10 +1365,8 @@ function renderCards() {
           ${showForm
             ? `
             <div class="card-form">
-              <div class="card-form-row">
-                <select class="folder-select">${folderOptionsHtml(item.folder, item.source !== 'manual' ? item.handle : null)}</select>
-                <input type="text" class="tag-input" placeholder="태그 (쉼표로 구분)" value="${tagInputValue}" />
-              </div>
+              <select class="folder-select">${folderOptionsHtml(item.folder, item.source !== 'manual' ? item.handle : null)}</select>
+              <div class="tag-chip-input-container" data-initial-tags="${initialChipTagsAttr}"></div>
               <div class="card-form-actions">
                 <button class="save-btn">저장</button>
                 ${isEditing ? `<button class="cancel-btn" type="button">취소</button>` : ''}
@@ -1334,7 +1399,14 @@ function renderCards() {
   });
   grid.innerHTML = html;
 
-  grid.querySelectorAll('.tag-input').forEach(enableCommaOnEnter);
+  const chipInputControllers = new Map(); // cardId -> { getTags }
+  grid.querySelectorAll('.tag-chip-input-container').forEach((container) => {
+    const cardEl = container.closest('.card');
+    const id = cardEl.dataset.id;
+    let initialTags = [];
+    try { initialTags = JSON.parse(container.dataset.initialTags || '[]'); } catch (e) { initialTags = []; }
+    chipInputControllers.set(id, buildChipInput(container, initialTags));
+  });
 
   grid.querySelectorAll('.card').forEach((cardEl) => {
     const idx = Number(cardEl.dataset.idx);
@@ -1375,9 +1447,8 @@ function renderCards() {
     if (!saveBtn) return;
     saveBtn.addEventListener('click', async () => {
       const folder = cardEl.querySelector('.folder-select').value.trim();
-      const tagsRaw = cardEl.querySelector('.tag-input').value.trim();
+      const tags = chipInputControllers.get(id)?.getTags() || [];
       if (!folder) { alert('폴더를 선택해주세요.'); return; }
-      const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
 
       data.items[idx].folder = folder;
       data.items[idx].tags = tags;
@@ -1407,7 +1478,16 @@ function render() {
 document.getElementById('settingsBtn').addEventListener('click', () => {
   requireUnlock(() => openSetupModal(fetchAndRenderFromGist));
 });
-document.getElementById('titleHome').addEventListener('click', () => { currentFilter = 'all'; searchTerm = ''; document.getElementById('searchInput').value = ''; mainView = 'cards'; render(); });
+document.getElementById('titleHome').addEventListener('click', () => {
+  currentFilter = 'all';
+  searchTerm = '';
+  document.getElementById('searchInput').value = '';
+  dateFilter = '';
+  document.getElementById('dateFilterInput').value = '';
+  document.getElementById('dateFilterClearBtn').style.display = 'none';
+  mainView = 'cards';
+  requireUnlock(fetchAndRenderFromGist);
+});
 document.getElementById('cardsViewBtn').addEventListener('click', () => { mainView = 'cards'; render(); });
 document.getElementById('tagsViewBtn').addEventListener('click', () => { mainView = 'tags'; render(); });
 document.getElementById('tagSearchInput').addEventListener('input', (e) => { tagSearchTerm = e.target.value; renderTagsView(); });
@@ -1421,7 +1501,6 @@ document.getElementById('addTagGroupBtn').addEventListener('click', async () => 
 document.getElementById('autoTagBtn').addEventListener('click', openAutoTagRulesModal);
 document.getElementById('folderManageLink').addEventListener('click', openFolderManageModal);
 document.getElementById('checkLinksBtn').addEventListener('click', checkAllLinks);
-document.getElementById('refreshBtn').addEventListener('click', () => requireUnlock(fetchAndRenderFromGist));
 document.getElementById('lockBtn').addEventListener('click', () => {
   settings = null;
   clearSessionSettings();
